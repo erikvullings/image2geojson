@@ -1,0 +1,4 @@
+node_modules/
+dist/
+*.pmtiles
+.DS_Store

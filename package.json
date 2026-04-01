@@ -1,0 +1,39 @@
+{
+  "name": "image2geojson",
+  "version": "0.0.1",
+  "description": "Convert a picture with overlays to GeoJSON.",
+  "keywords": [
+    "maplibre",
+    "mithril",
+    "overlay",
+    "map",
+    "trace",
+    "GeoJSON"
+  ],
+  "license": "MIT",
+  "author": "Erik Vullings <erik.vullings@gmail.com>",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@turf/turf": "^7.1.0",
+    "imagetracerjs": "^1.2.6",
+    "maplibre-gl": "^5.3.0",
+    "maplibre-gl-draw": "^1.6.9",
+    "meiosis-setup": "^6.2.3",
+    "mithril": "^2.2.2",
+    "pmtiles": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/geojson": "^7946.0.16",
+    "@types/mithril": "^2.2.8",
+    "@types/node": "^22.13.14",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.3",
+    "vite-plugin-pwa": "^0.21.1"
+  }
+}
