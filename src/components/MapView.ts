@@ -4,6 +4,7 @@ import { Protocol } from 'pmtiles';
 import type { MeiosisCell } from '../state';
 import type { AppState } from '../state/types';
 import { buildMapStyle } from '../services/mapHelpers';
+import { SearchBox } from './SearchBox';
 
 interface Attrs {
   cell: MeiosisCell<AppState>;
@@ -94,6 +95,7 @@ export const MapView: m.Component<Attrs> = {
         oncreate: ({ dom }) => { coordEl = dom as HTMLElement; },
         onremove: () => { coordEl = null; },
       }, '—'),
+      m(SearchBox),
     ]);
   },
 };

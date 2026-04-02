@@ -285,7 +285,7 @@ For military use you often want official topographic rasters (Topografische kaar
 
 - **Netherlands (BRT)**: The [PDOK tile service](https://www.pdok.nl/ogc-webservices) provides official Dutch topographic maps as XYZ tiles:
 
-  ```
+  ```text
   https://service.pdok.nl/brt/achtergrondkaart/wmts/v2_0/standaard/EPSG:3857/{z}/{x}/{y}.png
   ```
 
@@ -293,7 +293,7 @@ For military use you often want official topographic rasters (Topografische kaar
 
 - **Germany (BKG)**: The Bundesamt für Kartographie offers [WebAtlasDE](https://gdz.bkg.bund.de/):
 
-  ```
+  ```text
   https://sgx.geodatenzentrum.de/wmts_webatlasde.light/tile/1.0.0/webatlasde.light/default/GLOBAL_WEBMERCATOR/{z}/{y}/{x}.png
   ```
 

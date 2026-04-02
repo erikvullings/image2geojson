@@ -323,6 +323,52 @@ textarea.prop-input { resize: vertical; font-family: inherit; }
 .hint { padding: 12px; color: var(--text2); font-size: 12px; }
 .hint-note { display: block; font-size: 11px; color: var(--accent); margin-top: 4px; font-style: italic; }
 
+/* ── Search box ─────────────────────────────────────── */
+.search-box {
+  position: absolute;
+  top: 10px;
+  right: 48px; /* clear MapLibre navigation control */
+  z-index: 10;
+  width: 260px;
+}
+.search-box input {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+.search-box input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.search-results {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  max-height: 220px;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+.search-result-item {
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.search-result-item:last-child { border-bottom: none; }
+.search-result-item:hover { background: var(--surface); }
+.search-result-item small {
+  display: block;
+  color: var(--text2);
+  font-size: 11px;
+  margin-top: 1px;
+}
+
 /* ── Settings panel ─────────────────────────────────── */
 .settings-panel {
   position: absolute;
