@@ -2,6 +2,7 @@ import m from 'mithril';
 import { PMTiles, FileSource } from 'pmtiles';
 import type { MeiosisCell } from '../state';
 import type { AppState, TileSourceConfig } from '../state/types';
+import { inspectPmtiles, rememberLocalPmtiles } from '../services/pmtiles';
 import { pmProtocol } from './MapView';
 
 interface Attrs {
@@ -68,7 +69,7 @@ export const SettingsPanel: m.Component<Attrs> = {
               m('input', {
                 type: 'file',
                 accept: '.pmtiles',
-                onchange: (e: Event) => {
+                onchange: async (e: Event) => {
                   const file = (e.target as HTMLInputElement).files?.[0];
                   if (!file) return;
                   // Use FileSource so the PMTiles library uses file.slice() for range reads.
@@ -76,7 +77,16 @@ export const SettingsPanel: m.Component<Attrs> = {
                   // which causes "Wrong magic number" errors for large files.
                   const p = new PMTiles(new FileSource(file));
                   pmProtocol.add(p); // register under file.name as the key
-                  set({ customUrl: file.name });
+                  rememberLocalPmtiles(file.name, p);
+
+                  try {
+                    const { customType } = await inspectPmtiles(p);
+                    cell.update({
+                      tileSource: { ...cfg, type: 'custom', customType, customUrl: file.name },
+                    });
+                  } catch {
+                    set({ type: 'custom', customUrl: file.name });
+                  }
                 },
               }),
               ' or pick a local .pmtiles file',

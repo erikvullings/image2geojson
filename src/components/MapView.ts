@@ -4,6 +4,7 @@ import { Protocol } from 'pmtiles';
 import type { MeiosisCell } from '../state';
 import type { AppState } from '../state/types';
 import { buildMapStyle } from '../services/mapHelpers';
+import { inspectPmtiles } from '../services/pmtiles';
 import { SearchBox } from './SearchBox';
 
 interface Attrs {
@@ -15,7 +16,39 @@ let coordEl: HTMLElement | null = null;
 let lastTileSourceKey = '';
 
 function tileSourceKey(s: AppState['tileSource']): string {
-  return s.type === 'preset' ? s.preset : `${s.customType}::${s.customUrl}`;
+  return s.type === 'preset'
+    ? `preset::${s.preset}`
+    : `custom::${s.customType}::${s.customUrl}`;
+}
+
+function fitMapToPmtilesBounds(
+  mapInstance: maplibregl.Map,
+  bounds: [number, number, number, number] | null,
+): void {
+  if (!bounds) return;
+  mapInstance.fitBounds(
+    [
+      [bounds[0], bounds[1]],
+      [bounds[2], bounds[3]],
+    ],
+    { padding: 40, duration: 0 },
+  );
+}
+
+async function syncPmtilesViewport(
+  mapInstance: maplibregl.Map,
+  tileSource: AppState['tileSource'],
+): Promise<void> {
+  if (tileSource.type !== 'custom' || !tileSource.customType.startsWith('pmtiles') || !tileSource.customUrl) {
+    return;
+  }
+
+  try {
+    const { bounds } = await inspectPmtiles(tileSource.customUrl);
+    fitMapToPmtilesBounds(mapInstance, bounds);
+  } catch {
+    // Ignore PMTiles header failures; the map style may still be usable.
+  }
 }
 
 // Register PMTiles protocol once
@@ -34,6 +67,7 @@ export const MapView: m.Component<Attrs> = {
       zoom: state.map.zoom,
       validateStyle: false,
     });
+    void syncPmtilesViewport(map, state.tileSource);
 
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
@@ -70,7 +104,12 @@ export const MapView: m.Component<Attrs> = {
       if (key !== lastTileSourceKey) {
         lastTileSourceKey = key;
         const style = buildMapStyle(s.tileSource) as StyleSpecification | string;
-        try { map.setStyle(style); } catch { /* ignore during init */ }
+        try {
+          map.setStyle(style);
+          void syncPmtilesViewport(map, s.tileSource);
+        } catch {
+          /* ignore during init */
+        }
       }
     });
 

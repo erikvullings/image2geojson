@@ -121,6 +121,54 @@ function computeCorners(
   ];
 }
 
+function deriveTransformFromProjectedCorners(
+  corners: [[number, number], [number, number], [number, number], [number, number]],
+  mapWidth: number,
+  mapHeight: number,
+  naturalWidth: number,
+  naturalHeight: number,
+): ImageTransform {
+  const [tl, tr, br, bl] = corners;
+  const centerX = (tl[0] + tr[0] + br[0] + bl[0]) / 4;
+  const centerY = (tl[1] + tr[1] + br[1] + bl[1]) / 4;
+  const halfWidthVector: [number, number] = [
+    (tr[0] - tl[0] + br[0] - bl[0]) / 4,
+    (tr[1] - tl[1] + br[1] - bl[1]) / 4,
+  ];
+  const halfHeightVector: [number, number] = [
+    (bl[0] - tl[0] + br[0] - tr[0]) / 4,
+    (bl[1] - tl[1] + br[1] - tr[1]) / 4,
+  ];
+
+  const a = (2 * halfWidthVector[0]) / naturalWidth;
+  const b = (2 * halfWidthVector[1]) / naturalWidth;
+  const c = (2 * halfHeightVector[0]) / naturalHeight;
+  const d = (2 * halfHeightVector[1]) / naturalHeight;
+
+  const scaleX = Math.max(0.05, Math.hypot(a, b));
+  const rotation = Math.atan2(b, a);
+  const cosR = Math.cos(rotation);
+  const sinR = Math.sin(rotation);
+  const skewColumn = cosR * c + sinR * d;
+  const scaleY = Math.max(0.05, -sinR * c + cosR * d);
+
+  return {
+    translateX: centerX - mapWidth / 2,
+    translateY: centerY - mapHeight / 2,
+    scaleX,
+    scaleY,
+    rotation: rotation * 180 / Math.PI,
+    skewX: Math.atan2(skewColumn, scaleY) * 180 / Math.PI,
+    skewY: 0,
+  };
+}
+
+function removePinnedOverlay(map: maplibregl.Map | null): void {
+  if (!map) return;
+  if (map.getLayer('overlay-image-layer')) map.removeLayer('overlay-image-layer');
+  if (map.getSource('overlay-image')) map.removeSource('overlay-image');
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export const ImageOverlay: m.Component<Attrs> = {
   view({ attrs: { cell } }) {
@@ -152,16 +200,27 @@ export const ImageOverlay: m.Component<Attrs> = {
         m('button.btn.btn-primary', {
           onclick: () => {
             const map2 = getMap();
-            if (map2?.getLayer('overlay-image-layer')) map2.removeLayer('overlay-image-layer');
-            if (map2?.getSource('overlay-image')) map2.removeSource('overlay-image');
-            cell.update({ image: { ...img, pinned: false } });
+            let nextTransform = img.transform;
+            if (map2 && img.geoCorners) {
+              const projectedCorners = img.geoCorners.map((corner) => {
+                const point = map2.project(corner);
+                return [point.x, point.y] as [number, number];
+              }) as [[number, number], [number, number], [number, number], [number, number]];
+              nextTransform = deriveTransformFromProjectedCorners(
+                projectedCorners,
+                map2.getContainer().clientWidth,
+                map2.getContainer().clientHeight,
+                img.naturalWidth || 800,
+                img.naturalHeight || 600,
+              );
+            }
+            removePinnedOverlay(map2);
+            cell.update({ image: { ...img, pinned: false, transform: nextTransform } });
           },
         }, '📌 Unpin'),
         m('button.btn', {
           onclick: () => {
-            const map2 = getMap();
-            if (map2?.getLayer('overlay-image-layer')) map2.removeLayer('overlay-image-layer');
-            if (map2?.getSource('overlay-image')) map2.removeSource('overlay-image');
+            removePinnedOverlay(getMap());
             cell.update({ image: { ...img, src: null, pinned: false } });
           },
         }, '🗑 Remove'),
