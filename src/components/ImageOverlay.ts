@@ -2,6 +2,8 @@ import m from 'mithril';
 import maplibregl from 'maplibre-gl';
 import type { MeiosisCell } from '../state';
 import type { AppState, ImageTransform } from '../state/types';
+import { suggestImageAlignment, type AlignmentMode, type AlignmentSuggestion } from '../services/alignment';
+import { computeOverlayCorners } from '../services/imageOverlayGeometry';
 import { getMap } from './MapView';
 
 interface Attrs {
@@ -9,12 +11,16 @@ interface Attrs {
 }
 
 // ── Module-level drag state ───────────────────────────────────────────────────
-type Handle = 'move' | 'tl' | 'tr' | 'br' | 'bl' | 'rotate';
+type Handle = 'move' | 'tl' | 'tr' | 'br' | 'bl' | 'tm' | 'bm' | 'lm' | 'rm' | 'rotate';
 let activeHandle: Handle | null = null;
 let startX = 0;
 let startY = 0;
 let startTransform: ImageTransform | null = null;
 let activeCell: MeiosisCell<AppState> | null = null;
+let aligning = false;
+let alignmentSuggestion: AlignmentSuggestion | null = null;
+let alignmentError = '';
+let alignmentMode: AlignmentMode = 'fit';
 
 function onGlobalMouseMove(ev: MouseEvent) {
   if (!activeHandle || !startTransform || !activeCell) return;
@@ -30,18 +36,74 @@ function onGlobalMouseMove(ev: MouseEvent) {
     case 'move':
       newT = { ...dt, translateX: dt.translateX + dx, translateY: dt.translateY + dy };
       break;
-    case 'br':
-      newT = { ...dt, scaleX: Math.max(0.05, dt.scaleX + dx / nw), scaleY: Math.max(0.05, dt.scaleY + dy / nh) };
+    case 'br': {
+      const dScaleX = dx / nw;
+      const dScaleY = dy / nh;
+      const newScaleX = Math.max(0.05, dt.scaleX + dScaleX);
+      const newScaleY = Math.max(0.05, dt.scaleY + dScaleY);
+      const shiftX = (nw / 2) * (newScaleX - dt.scaleX);
+      const shiftY = (nh / 2) * (newScaleY - dt.scaleY);
+      newT = { ...dt, scaleX: newScaleX, scaleY: newScaleY, translateX: dt.translateX + shiftX, translateY: dt.translateY + shiftY };
       break;
-    case 'bl':
-      newT = { ...dt, scaleX: Math.max(0.05, dt.scaleX - dx / nw), scaleY: Math.max(0.05, dt.scaleY + dy / nh) };
+    }
+    case 'bl': {
+      const dScaleX = -dx / nw;
+      const dScaleY = dy / nh;
+      const newScaleX = Math.max(0.05, dt.scaleX + dScaleX);
+      const newScaleY = Math.max(0.05, dt.scaleY + dScaleY);
+      const shiftX = (nw / 2) * (newScaleX - dt.scaleX);
+      const shiftY = (nh / 2) * (newScaleY - dt.scaleY);
+      newT = { ...dt, scaleX: newScaleX, scaleY: newScaleY, translateX: dt.translateX - shiftX, translateY: dt.translateY + shiftY };
       break;
-    case 'tr':
-      newT = { ...dt, scaleX: Math.max(0.05, dt.scaleX + dx / nw), scaleY: Math.max(0.05, dt.scaleY - dy / nh) };
+    }
+    case 'tr': {
+      const dScaleX = dx / nw;
+      const dScaleY = -dy / nh;
+      const newScaleX = Math.max(0.05, dt.scaleX + dScaleX);
+      const newScaleY = Math.max(0.05, dt.scaleY + dScaleY);
+      const shiftX = (nw / 2) * (newScaleX - dt.scaleX);
+      const shiftY = (nh / 2) * (newScaleY - dt.scaleY);
+      newT = { ...dt, scaleX: newScaleX, scaleY: newScaleY, translateX: dt.translateX + shiftX, translateY: dt.translateY - shiftY };
       break;
-    case 'tl':
-      newT = { ...dt, scaleX: Math.max(0.05, dt.scaleX - dx / nw), scaleY: Math.max(0.05, dt.scaleY - dy / nh) };
+    }
+    case 'tl': {
+      const dScaleX = -dx / nw;
+      const dScaleY = -dy / nh;
+      const newScaleX = Math.max(0.05, dt.scaleX + dScaleX);
+      const newScaleY = Math.max(0.05, dt.scaleY + dScaleY);
+      const shiftX = (nw / 2) * (newScaleX - dt.scaleX);
+      const shiftY = (nh / 2) * (newScaleY - dt.scaleY);
+      newT = { ...dt, scaleX: newScaleX, scaleY: newScaleY, translateX: dt.translateX - shiftX, translateY: dt.translateY - shiftY };
       break;
+    }
+    case 'tm': {
+      const dScaleY = -dy / nh;
+      const newScaleY = Math.max(0.05, dt.scaleY + dScaleY);
+      const shiftY = (nh / 2) * (newScaleY - dt.scaleY);
+      newT = { ...dt, scaleY: newScaleY, translateY: dt.translateY - shiftY };
+      break;
+    }
+    case 'bm': {
+      const dScaleY = dy / nh;
+      const newScaleY = Math.max(0.05, dt.scaleY + dScaleY);
+      const shiftY = (nh / 2) * (newScaleY - dt.scaleY);
+      newT = { ...dt, scaleY: newScaleY, translateY: dt.translateY + shiftY };
+      break;
+    }
+    case 'lm': {
+      const dScaleX = -dx / nw;
+      const newScaleX = Math.max(0.05, dt.scaleX + dScaleX);
+      const shiftX = (nw / 2) * (newScaleX - dt.scaleX);
+      newT = { ...dt, scaleX: newScaleX, translateX: dt.translateX - shiftX };
+      break;
+    }
+    case 'rm': {
+      const dScaleX = dx / nw;
+      const newScaleX = Math.max(0.05, dt.scaleX + dScaleX);
+      const shiftX = (nw / 2) * (newScaleX - dt.scaleX);
+      newT = { ...dt, scaleX: newScaleX, translateX: dt.translateX + shiftX };
+      break;
+    }
     case 'rotate':
       newT = { ...dt, rotation: dt.rotation + dx * 0.5 };
       break;
@@ -68,57 +130,6 @@ function frameTransform(t: ImageTransform): string {
     `scaleX(${t.scaleX})`,
     `scaleY(${t.scaleY})`,
   ].join(' ');
-}
-
-/**
- * Compute the 4 actual viewport pixel coordinates of the image corners,
- * applying the same CSS transform as the .img-frame element.
- *
- * CSS transform order: rotate(r) skewX(sx) skewY(sy) scaleX(mx) scaleY(my)
- * Matrix application order (right-to-left): scale → skewY → skewX → rotate
- *
- * Returns coordinates relative to the MAP CONTAINER top-left (for map.unproject).
- */
-function computeCorners(
-  img: { naturalWidth: number; naturalHeight: number; transform: ImageTransform },
-  mapRect: DOMRect,
-): [[number, number], [number, number], [number, number], [number, number]] {
-  const nw = img.naturalWidth || 800;
-  const nh = img.naturalHeight || 600;
-  const t = img.transform;
-
-  // Center of the image in viewport coordinates.
-  // #image-overlay is inset:0 over the map container, so overlay center == map center.
-  const cx = mapRect.left + mapRect.width  / 2 + t.translateX;
-  const cy = mapRect.top  + mapRect.height / 2 + t.translateY;
-
-  const r  = t.rotation * Math.PI / 180;
-  const sx = t.skewX    * Math.PI / 180;
-  const sy = t.skewY    * Math.PI / 180;
-  const cosR = Math.cos(r), sinR = Math.sin(r);
-  const tanSx = Math.tan(sx), tanSy = Math.tan(sy);
-
-  function xform(lx: number, ly: number): [number, number] {
-    // 1. scale
-    let x = lx * t.scaleX;
-    let y = ly * t.scaleY;
-    // 2. skewY: x'=x, y'=y+x·tan(sy)
-    y = y + x * tanSy;
-    // 3. skewX: x'=x+y·tan(sx), y'=y
-    x = x + y * tanSx;
-    // 4. rotate
-    const rx = x * cosR - y * sinR;
-    const ry = x * sinR + y * cosR;
-    // Convert from viewport coords to map-container-relative coords
-    return [cx + rx - mapRect.left, cy + ry - mapRect.top];
-  }
-
-  return [
-    xform(-nw / 2, -nh / 2), // TL
-    xform(+nw / 2, -nh / 2), // TR
-    xform(+nw / 2, +nh / 2), // BR
-    xform(-nw / 2, +nh / 2), // BL
-  ];
 }
 
 function deriveTransformFromProjectedCorners(
@@ -230,6 +241,8 @@ export const ImageOverlay: m.Component<Attrs> = {
     const md = (h: Handle) => (e: MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      alignmentSuggestion = null;
+      alignmentError = '';
       activeHandle = h;
       startX = e.clientX;
       startY = e.clientY;
@@ -238,7 +251,44 @@ export const ImageOverlay: m.Component<Attrs> = {
     };
 
     const setT = (partial: Partial<ImageTransform>) =>
-      cell.update({ image: { ...img, transform: { ...t, ...partial } } });
+      {
+        alignmentSuggestion = null;
+        alignmentError = '';
+        cell.update({ image: { ...img, transform: { ...t, ...partial } } });
+      };
+
+    const runSuggestion = async (mode: AlignmentMode) => {
+      const map2 = getMap();
+      if (!map2) return;
+      aligning = true;
+      alignmentMode = mode;
+      alignmentSuggestion = null;
+      alignmentError = '';
+      m.redraw();
+      try {
+        const suggestion = await suggestImageAlignment(
+          map2,
+          img.src!,
+          img.naturalWidth || 800,
+          img.naturalHeight || 600,
+          t,
+          cell.state.ui.traceSettings,
+          mode,
+        );
+        if (!suggestion) {
+          alignmentError = mode === 'fit'
+            ? 'No confident fit found. The app first tries water/forest-like areas, then falls back to map lines. Zoom into the relevant area and keep water, vegetation, roads, or boundaries visible.'
+            : 'No confident angle/skew refinement found. Try running fit first, then zoom in further before refining.';
+        } else {
+          alignmentSuggestion = suggestion;
+        }
+      } catch {
+        alignmentError = 'Alignment suggestion failed.';
+      } finally {
+        aligning = false;
+        m.redraw();
+      }
+    };
 
     return m('div#image-overlay', [
       // Frame: centred at viewport mid + user translation, then rotated/skewed/scaled
@@ -255,10 +305,14 @@ export const ImageOverlay: m.Component<Attrs> = {
         onmousedown: md('move'),
       }, [
         m('img', { src: img.src, draggable: false }),
-        m('div.handle.handle-tl', { onmousedown: md('tl'), title: 'Drag to scale' }),
-        m('div.handle.handle-tr', { onmousedown: md('tr'), title: 'Drag to scale' }),
-        m('div.handle.handle-br', { onmousedown: md('br'), title: 'Drag to scale' }),
-        m('div.handle.handle-bl', { onmousedown: md('bl'), title: 'Drag to scale' }),
+        m('div.handle.handle-tl', { onmousedown: md('tl'), title: 'Drag to scale (opposite corner locked)' }),
+        m('div.handle.handle-tr', { onmousedown: md('tr'), title: 'Drag to scale (opposite corner locked)' }),
+        m('div.handle.handle-br', { onmousedown: md('br'), title: 'Drag to scale (opposite corner locked)' }),
+        m('div.handle.handle-bl', { onmousedown: md('bl'), title: 'Drag to scale (opposite corner locked)' }),
+        m('div.handle.handle-tm', { onmousedown: md('tm'), title: 'Drag to scale vertically (bottom locked)' }),
+        m('div.handle.handle-bm', { onmousedown: md('bm'), title: 'Drag to scale vertically (top locked)' }),
+        m('div.handle.handle-lm', { onmousedown: md('lm'), title: 'Drag to scale horizontally (right locked)' }),
+        m('div.handle.handle-rm', { onmousedown: md('rm'), title: 'Drag to scale horizontally (left locked)' }),
         m('div.handle.handle-rotate', { onmousedown: md('rotate'), title: 'Drag to rotate' }),
       ]),
 
@@ -311,13 +365,27 @@ export const ImageOverlay: m.Component<Attrs> = {
           }),
           m('span', t.skewY + '°'),
         ]),
+        m('button.btn', {
+          onclick: () => setT({ rotation: 0 }),
+        }, 'Reset rotation'),
+        m('button.btn', {
+          onclick: () => setT({ skewX: 0, skewY: 0 }),
+        }, 'Reset skew'),
+        m('button.btn', {
+          disabled: aligning,
+          onclick: () => void runSuggestion('fit'),
+        }, aligning && alignmentMode === 'fit' ? '⏳ Fitting…' : '🎯 Suggest fit'),
+        m('button.btn', {
+          disabled: aligning,
+          onclick: () => void runSuggestion('refine'),
+        }, aligning && alignmentMode === 'refine' ? '⏳ Refining…' : '🧭 Refine angle/skew'),
         m('button.btn.btn-primary', {
           onclick: () => {
             const map2 = getMap();
             if (!map2) return;
             const mapEl = map2.getContainer();
             const mapRect = mapEl.getBoundingClientRect();
-            const pixelCorners = computeCorners(img, mapRect);
+            const pixelCorners = computeOverlayCorners(img, mapRect);
             const corners: [[number, number], [number, number], [number, number], [number, number]] = [
               map2.unproject(pixelCorners[0]).toArray() as [number, number],
               map2.unproject(pixelCorners[1]).toArray() as [number, number],
@@ -341,6 +409,30 @@ export const ImageOverlay: m.Component<Attrs> = {
           onclick: () => cell.update({ image: { ...img, src: null, pinned: false } }),
         }, '🗑 Remove'),
       ]),
+      alignmentSuggestion && m('div#alignment-suggestion', [
+        m('div', alignmentMode === 'fit' ? 'Fit suggestion' : 'Angle/skew refinement'),
+        m('div', `Matched from: ${alignmentSuggestion.source === 'areas' ? 'area boundaries (water/forest)' : 'linework (roads/waterways/boundaries)'}.`),
+        m('div', `Suggested move: ${Math.round(alignmentSuggestion.offset[0])} px horizontally, ${Math.round(alignmentSuggestion.offset[1])} px vertically.`),
+        m('div', `Suggested scale: ${alignmentSuggestion.transform.scaleX.toFixed(2)}x horizontally, ${alignmentSuggestion.transform.scaleY.toFixed(2)}x vertically. Rotation: ${alignmentSuggestion.transform.rotation.toFixed(1)}°.`),
+        m('div', `Suggested skew: X ${alignmentSuggestion.transform.skewX.toFixed(1)}°, Y ${alignmentSuggestion.transform.skewY.toFixed(1)}°.`),
+        m('div', `Confidence: ${Math.round(alignmentSuggestion.score * 100)}% from ${alignmentSuggestion.matchedSamples}/${alignmentSuggestion.totalSamples} sampled trace points.`),
+        m('div.alignment-actions', [
+          m('button.btn.btn-primary', {
+            onclick: () => {
+              cell.update({ image: { ...img, transform: alignmentSuggestion!.transform } });
+              alignmentSuggestion = null;
+              alignmentError = '';
+            },
+          }, 'Apply suggestion'),
+          m('button.btn', {
+            onclick: () => {
+              alignmentSuggestion = null;
+              alignmentError = '';
+            },
+          }, 'Dismiss'),
+        ]),
+      ]),
+      alignmentError && m('div#alignment-suggestion.error', alignmentError),
     ]);
   },
 };

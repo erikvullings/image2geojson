@@ -150,9 +150,13 @@ html, body, #app {
   pointer-events: auto;
 }
 .handle-tl { top: -7px;    left: -7px;   cursor: nwse-resize; }
-.handle-tr { top: -7px;    right: -7px;  cursor: nesw-resize; }
-.handle-br { bottom: -7px; right: -7px;  cursor: nwse-resize; }
-.handle-bl { bottom: -7px; left: -7px;   cursor: nesw-resize; }
+  .handle-tr { top: -7px;    right: -7px;  cursor: nesw-resize; }
+  .handle-br { bottom: -7px; right: -7px;  cursor: nwse-resize; }
+  .handle-bl { bottom: -7px; left: -7px;  cursor: nesw-resize; }
+  .handle-tm { top: -7px;    left: 50%;   transform: translateX(-50%); cursor: ns-resize; }
+  .handle-bm { bottom: -7px; left: 50%;   transform: translateX(-50%); cursor: ns-resize; }
+  .handle-lm { top: 50%;    left: -7px;  transform: translateY(-50%); cursor: ew-resize; }
+  .handle-rm { top: 50%;    right: -7px;  transform: translateY(-50%); cursor: ew-resize; }
 .handle-rotate {
   top: -36px;
   left: 50%;
@@ -180,24 +184,52 @@ html, body, #app {
   border-radius: var(--radius);
   padding: 8px 12px;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 6px 16px;
   align-items: center;
   pointer-events: auto;
   z-index: 20;
-  max-width: 700px;
-  width: max-content;
+  width: min(980px, calc(100vw - 32px));
 }
 #overlay-controls label {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  white-space: nowrap;
+  min-width: 0;
 }
-#overlay-controls label input[type=range] { width: 90px; flex-shrink: 0; }
+#overlay-controls label input[type=range] { width: 100%; min-width: 0; flex: 1 1 auto; }
 #overlay-controls label span { min-width: 38px; text-align: right; color: var(--text2); font-size: 11px; }
 #overlay-controls .btn { grid-column: span 1; }
+
+#alignment-suggestion {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 21;
+  min-width: 320px;
+  max-width: min(640px, calc(100vw - 32px));
+  background: rgba(15, 52, 96, 0.96);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: auto;
+}
+
+#alignment-suggestion.error {
+  background: rgba(122, 26, 26, 0.94);
+}
+
+.alignment-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
 
 /* ── Upload prompt ──────────────────────────────────── */
 #upload-prompt {
