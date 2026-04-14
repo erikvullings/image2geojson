@@ -11,7 +11,7 @@ interface Attrs {
 }
 
 // ── Module-level drag state ───────────────────────────────────────────────────
-type Handle = 'move' | 'tl' | 'tr' | 'br' | 'bl' | 'tm' | 'bm' | 'lm' | 'rm' | 'rotate';
+type Handle = 'move' | 'tl' | 'tr' | 'br' | 'bl' | 'tm' | 'bm' | 'lm' | 'rm' | 'rotate' | 'rtl' | 'rtr' | 'rbr' | 'rbl';
 let activeHandle: Handle | null = null;
 let startX = 0;
 let startY = 0;
@@ -21,6 +21,7 @@ let aligning = false;
 let alignmentSuggestion: AlignmentSuggestion | null = null;
 let alignmentError = '';
 let alignmentMode: AlignmentMode = 'fit';
+let showRotation = false;
 
 function onGlobalMouseMove(ev: MouseEvent) {
   if (!activeHandle || !startTransform || !activeCell) return;
@@ -105,8 +106,25 @@ function onGlobalMouseMove(ev: MouseEvent) {
       break;
     }
     case 'rotate':
-      newT = { ...dt, rotation: dt.rotation + dx * 0.5 };
+      newT = { ...dt, rotation: (dt.rotation ?? 0) + dx * 0.5 };
       break;
+    case 'rtl':
+    case 'rtr':
+    case 'rbr':
+    case 'rbl': {
+      const sx = dt.scaleX ?? 1;
+      const sy = dt.scaleY ?? 1;
+      const cx = nw / 2 * sx;
+      const cy = nh / 2 * sy;
+      const startAngle = Math.atan2(startY - cy, startX - cx);
+      const currentAngle = Math.atan2(dy - cy, dx - cx);
+      let angleDelta = (currentAngle - startAngle) * 180 / Math.PI;
+      if (ev.shiftKey || ev.ctrlKey || ev.metaKey) {
+        angleDelta = Math.round(angleDelta / 15) * 15;
+      }
+      newT = { ...dt, rotation: (dt.rotation ?? 0) - angleDelta };
+      break;
+    }
   }
   activeCell.update({ image: { ...img, transform: newT } });
   m.redraw();
@@ -300,20 +318,42 @@ export const ImageOverlay: m.Component<Attrs> = {
           marginTop: `${-nh / 2 + t.translateY}px`,
           transform: frameTransform(t),
           opacity: img.opacity,
-          cursor: 'move',
+          cursor: showRotation ? 'grab' : 'move',
         },
-        onmousedown: md('move'),
+        onmousedown: (e: MouseEvent) => {
+          if (e.target === e.currentTarget || (e.target as HTMLElement).tagName === 'IMG') {
+            showRotation = !showRotation;
+            e.preventDefault();
+            e.stopPropagation();
+            m.redraw();
+          } else {
+            md('move')(e);
+          }
+        },
       }, [
         m('img', { src: img.src, draggable: false }),
-        m('div.handle.handle-tl', { onmousedown: md('tl'), title: 'Drag to scale (opposite corner locked)' }),
-        m('div.handle.handle-tr', { onmousedown: md('tr'), title: 'Drag to scale (opposite corner locked)' }),
-        m('div.handle.handle-br', { onmousedown: md('br'), title: 'Drag to scale (opposite corner locked)' }),
-        m('div.handle.handle-bl', { onmousedown: md('bl'), title: 'Drag to scale (opposite corner locked)' }),
-        m('div.handle.handle-tm', { onmousedown: md('tm'), title: 'Drag to scale vertically (bottom locked)' }),
-        m('div.handle.handle-bm', { onmousedown: md('bm'), title: 'Drag to scale vertically (top locked)' }),
-        m('div.handle.handle-lm', { onmousedown: md('lm'), title: 'Drag to scale horizontally (right locked)' }),
-        m('div.handle.handle-rm', { onmousedown: md('rm'), title: 'Drag to scale horizontally (left locked)' }),
-        m('div.handle.handle-rotate', { onmousedown: md('rotate'), title: 'Drag to rotate' }),
+        ...(showRotation ? [
+          m('div.handle.handle-rtl', { onmousedown: md('rtl'), title: 'Drag to rotate (shift for 15deg snap)' }),
+          m('div.handle.handle-rtr', { onmousedown: md('rtr'), title: 'Drag to rotate (shift for 15deg snap)' }),
+          m('div.handle.handle-rbr', { onmousedown: md('rbr'), title: 'Drag to rotate (shift for 15deg snap)' }),
+          m('div.handle.handle-rbl', { onmousedown: md('rbl'), title: 'Drag to rotate (shift for 15deg snap)' }),
+        ] : [
+          m('div.handle.handle-tl', { onmousedown: md('tl'), title: 'Drag to scale (opposite corner locked)' }),
+          m('div.handle.handle-tr', { onmousedown: md('tr'), title: 'Drag to scale (opposite corner locked)' }),
+          m('div.handle.handle-br', { onmousedown: md('br'), title: 'Drag to scale (opposite corner locked)' }),
+          m('div.handle.handle-bl', { onmousedown: md('bl'), title: 'Drag to scale (opposite corner locked)' }),
+        ]),
+        ...(showRotation ? [
+          m('div.handle.handle-tm', { onmousedown: md('tm'), title: 'Drag to scale vertically (bottom locked)' }),
+          m('div.handle.handle-bm', { onmousedown: md('bm'), title: 'Drag to scale vertically (top locked)' }),
+          m('div.handle.handle-lm', { onmousedown: md('lm'), title: 'Drag to scale horizontally (right locked)' }),
+          m('div.handle.handle-rm', { onmousedown: md('rm'), title: 'Drag to scale horizontally (left locked)' }),
+        ] : [
+          m('div.handle.handle-tm', { onmousedown: md('tm'), title: 'Drag to scale vertically (bottom locked)' }),
+          m('div.handle.handle-bm', { onmousedown: md('bm'), title: 'Drag to scale vertically (top locked)' }),
+          m('div.handle.handle-lm', { onmousedown: md('lm'), title: 'Drag to scale horizontally (right locked)' }),
+          m('div.handle.handle-rm', { onmousedown: md('rm'), title: 'Drag to scale horizontally (left locked)' }),
+        ]),
       ]),
 
       // Controls bar

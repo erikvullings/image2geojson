@@ -142,6 +142,40 @@ function walkSkeleton(
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+export async function traceImageToPixelLines(
+  imageSrc: string,
+  settings: TraceSettings,
+): Promise<any> {
+  const img = await loadImage(imageSrc);
+  const MAX_DIM = 1500;
+  const scale = Math.min(1, MAX_DIM / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.round(img.naturalWidth  * scale);
+  const h = Math.round(img.naturalHeight * scale);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d')!;
+
+  if (settings.blurRadius > 0) ctx.filter = `blur(${settings.blurRadius}px)`;
+  ctx.drawImage(img, 0, 0, w, h);
+  ctx.filter = 'none';
+
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const rgba = imageData.data;
+  const binary = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const r = rgba[i * 4], g = rgba[i * 4 + 1], b = rgba[i * 4 + 2];
+    const brightness = (r + g + b) / 3;
+    const threshold = settings.threshold;
+    binary[i] = brightness < threshold ? 1 : 0;
+  }
+
+  const minPixels = Math.max(5, Math.round(Math.min(w, h) * 0.01));
+  return walkSkeleton(binary, w, h, minPixels).map((line) =>
+    line.map(([px, py]) => [px / scale, py / scale] as [number, number]),
+  );
+}
+
 export async function traceImageToGeoJSON(
   imageSrc: string,
   geoCorners: GeoCorners,

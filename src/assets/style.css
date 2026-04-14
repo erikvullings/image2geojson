@@ -138,42 +138,74 @@ html, body, #app {
   draggable: false;
 }
 
-/* Corner handles — placed at each corner of the frame */
-.handle {
+/* Corner handles — Word-style: two perpendicular lines (black, thick) */
+.handle-tl, .handle-tr, .handle-br, .handle-bl {
   position: absolute;
-  width: 14px;
-  height: 14px;
-  background: var(--accent);
-  border: 2px solid #fff;
-  border-radius: 50%;
   z-index: 20;
   pointer-events: auto;
 }
-.handle-tl { top: -7px;    left: -7px;   cursor: nwse-resize; }
-  .handle-tr { top: -7px;    right: -7px;  cursor: nesw-resize; }
-  .handle-br { bottom: -7px; right: -7px;  cursor: nwse-resize; }
-  .handle-bl { bottom: -7px; left: -7px;  cursor: nesw-resize; }
-  .handle-tm { top: -7px;    left: 50%;   transform: translateX(-50%); cursor: ns-resize; }
-  .handle-bm { bottom: -7px; left: 50%;   transform: translateX(-50%); cursor: ns-resize; }
-  .handle-lm { top: 50%;    left: -7px;  transform: translateY(-50%); cursor: ew-resize; }
-  .handle-rm { top: 50%;    right: -7px;  transform: translateY(-50%); cursor: ew-resize; }
-.handle-rotate {
-  top: -36px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: #4caf50;
-  cursor: grab;
-}
-.handle-rotate::after {
+.handle-tl { top: -6px;    left: -6px;   cursor: nwse-resize; }
+  .handle-tr { top: -6px;    right: -6px;  cursor: nesw-resize; }
+  .handle-br { bottom: -6px; right: -6px;  cursor: nwse-resize; }
+  .handle-bl { bottom: -6px; left: -6px;  cursor: nesw-resize; }
+.handle-tl::before, .handle-tl::after,
+.handle-tr::before, .handle-tr::after,
+.handle-br::before, .handle-br::after,
+.handle-bl::before, .handle-bl::after {
   content: '';
   position: absolute;
-  bottom: -20px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 1px;
-  height: 20px;
-  background: rgba(255,255,255,0.4);
+  background: #000;
 }
+.handle-tl::before, .handle-tr::before, .handle-br::before, .handle-bl::before {
+  width: 24px;
+  height: 6px;
+}
+.handle-tl::after, .handle-tr::after, .handle-br::after, .handle-bl::after {
+  width: 6px;
+  height: 24px;
+}
+.handle-tl::before { top: 2px;    left: 2px; }
+  .handle-tl::after { top: 2px;    left: 2px; }
+  .handle-tr::before { top: 2px;    right: 2px; }
+  .handle-tr::after { top: 2px;    right: 2px; }
+  .handle-br::before { bottom: 2px; right: 2px; }
+  .handle-br::after { bottom: 2px; right: 2px; }
+  .handle-bl::before { bottom: 2px; left: 2px; }
+  .handle-bl::after { bottom: 2px; left: 2px; }
+.handle-tm, .handle-bm {
+  position: absolute;
+  width: 24px;
+  height: 6px;
+  background: #000;
+  z-index: 30;
+  cursor: ns-resize;
+}
+.handle-tm { top: -3px; left: 50%; transform: translateX(-50%); }
+.handle-bm { bottom: -3px; left: 50%; transform: translateX(-50%); }
+.handle-lm, .handle-rm {
+  position: absolute;
+  width: 6px;
+  height: 24px;
+  background: #000;
+  z-index: 30;
+  cursor: ew-resize;
+}
+.handle-lm { left: -3px; top: 50%; transform: translateY(-50%); }
+.handle-rm { right: -3px; top: 50%; transform: translateY(-50%); }
+.handle-rtl, .handle-rtr, .handle-rbr, .handle-rbl {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #000;
+  border-radius: 50%;
+  background: transparent;
+  z-index: 30;
+  cursor: grab;
+}
+.handle-rtl { top: -24px; left: -24px; border-color: transparent transparent transparent #000; border-width: 0 0 3px 3px; }
+.handle-rtr { top: -24px; right: -24px; border-color: transparent #000 transparent transparent; border-width: 3px 3px 0 0; }
+.handle-rbr { bottom: -24px; right: -24px; border-color: #000 transparent transparent transparent; border-width: 0 3px 3px 0; }
+.handle-rbl { bottom: -24px; left: -24px; border-color: transparent #000 #000 transparent; border-width: 3px 0 0 3px; }
 
 #overlay-controls {
   position: absolute;
