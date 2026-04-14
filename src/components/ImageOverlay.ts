@@ -354,17 +354,6 @@ export const ImageOverlay: m.Component<Attrs> = {
 
       // Controls bar
       m('div#overlay-controls', { onmousedown: (e: MouseEvent) => e.stopPropagation() }, [
-        m('label', ['Size',
-          m('input', {
-            type: 'range', min: 0.05, max: 5, step: 0.01,
-            value: (t.scaleX + t.scaleY) / 2,
-            oninput: (e: Event) => {
-              const v = parseFloat((e.target as HTMLInputElement).value);
-              setT({ scaleX: v, scaleY: v });
-            },
-          }),
-          m('span', `${((t.scaleX + t.scaleY) / 2).toFixed(2)}×`),
-        ]),
         m('label', ['Opacity',
           m('input', {
             type: 'range', min: 0, max: 1, step: 0.05, value: img.opacity,
@@ -372,20 +361,6 @@ export const ImageOverlay: m.Component<Attrs> = {
               cell.update({ image: { ...img, opacity: parseFloat((e.target as HTMLInputElement).value) } }),
           }),
           m('span', Math.round(img.opacity * 100) + '%'),
-        ]),
-        m('label', ['Scale X',
-          m('input', {
-            type: 'range', min: 0.05, max: 5, step: 0.01, value: t.scaleX,
-            oninput: (e: Event) => setT({ scaleX: parseFloat((e.target as HTMLInputElement).value) }),
-          }),
-          m('span', t.scaleX.toFixed(2) + '×'),
-        ]),
-        m('label', ['Scale Y',
-          m('input', {
-            type: 'range', min: 0.05, max: 5, step: 0.01, value: t.scaleY,
-            oninput: (e: Event) => setT({ scaleY: parseFloat((e.target as HTMLInputElement).value) }),
-          }),
-          m('span', t.scaleY.toFixed(2) + '×'),
         ]),
         m('label', ['Skew X',
           m('input', {
