@@ -112,14 +112,7 @@ function onGlobalMouseMove(ev: MouseEvent) {
     case 'rtr':
     case 'rbr':
     case 'rbl': {
-      const sx = dt.scaleX ?? 1;
-      const sy = dt.scaleY ?? 1;
-      const cx = nw / 2 * sx;
-      const cy = nh / 2 * sy;
-      const startAngle = Math.atan2(startY - cy, startX - cx);
-      const currentAngle = Math.atan2(dy - cy, dx - cx);
-      let angleDelta = (currentAngle - startAngle) * 180 / Math.PI;
-      let newRotation = (dt.rotation ?? 0) + angleDelta;
+      let newRotation = (dt.rotation ?? 0) + dx * 0.5;
       if (ev.shiftKey || ev.ctrlKey || ev.metaKey) {
         newRotation = Math.round(newRotation / 15) * 15;
       }

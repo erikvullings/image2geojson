@@ -192,21 +192,21 @@ html, body, #app {
 }
 .handle-lm { left: -3px; top: 50%; transform: translateY(-50%); }
 .handle-rm { right: -3px; top: 50%; transform: translateY(-50%); }
-/* Rotation handle base - quarter circles with center at corner */
+/* Rotation handle - thick rounded corners at each corner */
 .handle-rtl, .handle-rtr, .handle-rbr, .handle-rbl {
   position: absolute;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   background: transparent;
-  border: 3px solid #000;
+  border: 6px solid #000;
   z-index: 30;
   pointer-events: auto;
   cursor: grab;
 }
-.handle-rtl { top: -3px; left: -3px; border-radius: 100% 0 0 0; border-width: 3px 0 0 3px; }
-.handle-rtr { top: -3px; right: -3px; border-radius: 0 100% 0 0; border-width: 3px 3px 0 0; }
-.handle-rbr { bottom: -3px; right: -3px; border-radius: 0 0 100% 0; border-width: 0 3px 3px 0; }
-.handle-rbl { bottom: -3px; left: -3px; border-radius: 0 0 0 100%; border-width: 0 0 3px 3px; }
+.handle-rtl { top: -12px; left: -12px; border-radius: 100% 0 0 0; border-width: 6px 0 0 6px; }
+.handle-rtr { top: -12px; right: -12px; border-radius: 0 100% 0 0; border-width: 6px 6px 0 0; }
+.handle-rbr { bottom: -12px; right: -12px; border-radius: 0 0 100% 0; border-width: 0 6px 6px 0; }
+.handle-rbl { bottom: -12px; left: -12px; border-radius: 0 0 0 100%; border-width: 0 0 6px 6px; }
 
 #overlay-controls {
   position: absolute;
