@@ -192,20 +192,20 @@ html, body, #app {
 }
 .handle-lm { left: -3px; top: 50%; transform: translateY(-50%); }
 .handle-rm { right: -3px; top: 50%; transform: translateY(-50%); }
+/* Rotation handle base */
 .handle-rtl, .handle-rtr, .handle-rbr, .handle-rbl {
   position: absolute;
   width: 20px;
   height: 20px;
-  border: 2px solid #000;
-  border-radius: 50%;
-  background: transparent;
+  background: #000;
   z-index: 30;
+  pointer-events: auto;
   cursor: grab;
 }
-.handle-rtl { top: -24px; left: -24px; border-color: transparent transparent transparent #000; border-width: 0 0 3px 3px; }
-.handle-rtr { top: -24px; right: -24px; border-color: transparent #000 transparent transparent; border-width: 3px 3px 0 0; }
-.handle-rbr { bottom: -24px; right: -24px; border-color: #000 transparent transparent transparent; border-width: 0 3px 3px 0; }
-.handle-rbl { bottom: -24px; left: -24px; border-color: transparent #000 #000 transparent; border-width: 3px 0 0 3px; }
+.handle-rtl { top: -10px; left: -10px; border-radius: 0 0 0 100%; }
+.handle-rtr { top: -10px; right: -10px; border-radius: 0 0 100% 0; }
+.handle-rbr { bottom: -10px; right: -10px; border-radius: 100% 0 0 0; }
+.handle-rbl { bottom: -10px; left: -10px; border-radius: 0 100% 0 0; }
 
 #overlay-controls {
   position: absolute;
