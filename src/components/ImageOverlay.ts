@@ -112,7 +112,7 @@ function onGlobalMouseMove(ev: MouseEvent) {
     case 'rtr':
     case 'rbr':
     case 'rbl': {
-      let newRotation = (dt.rotation ?? 0) + dx * 0.5;
+      let newRotation = (dt.rotation ?? 0) + dx * 0.3;
       if (ev.shiftKey || ev.ctrlKey || ev.metaKey) {
         newRotation = Math.round(newRotation / 15) * 15;
       }
