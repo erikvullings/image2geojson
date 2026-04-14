@@ -119,10 +119,11 @@ function onGlobalMouseMove(ev: MouseEvent) {
       const startAngle = Math.atan2(startY - cy, startX - cx);
       const currentAngle = Math.atan2(dy - cy, dx - cx);
       let angleDelta = (currentAngle - startAngle) * 180 / Math.PI;
+      let newRotation = (dt.rotation ?? 0) + angleDelta;
       if (ev.shiftKey || ev.ctrlKey || ev.metaKey) {
-        angleDelta = Math.round(angleDelta / 15) * 15;
+        newRotation = Math.round(newRotation / 15) * 15;
       }
-      newT = { ...dt, rotation: (dt.rotation ?? 0) - angleDelta };
+      newT = { ...dt, rotation: newRotation };
       break;
     }
   }
