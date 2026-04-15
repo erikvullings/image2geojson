@@ -3,6 +3,125 @@ import type { ImageTransform, TraceSettings } from '../state/types';
 import { traceImageToPixelLines } from './imageTracer';
 import type { Feature, LineString, FeatureCollection } from 'geojson';
 
+type Point = { x: number; y: number };
+
+type Transform = {
+  scale: number;
+  tx: number;
+  ty: number;
+};
+
+function centroid(points: Point[]): Point {
+  let x = 0, y = 0;
+  for (const p of points) {
+    x += p.x;
+    y += p.y;
+  }
+  return { x: x / points.length, y: y / points.length };
+}
+
+function applyTransform(p: Point, t: Transform): Point {
+  return {
+    x: t.scale * p.x + t.tx,
+    y: t.scale * p.y + t.ty,
+  };
+}
+
+function nearestNeighbor(p: Point, targets: Point[]): Point {
+  let best = targets[0];
+  let bestDist = Infinity;
+
+  for (const t of targets) {
+    const dx = p.x - t.x;
+    const dy = p.y - t.y;
+    const d = dx * dx + dy * dy;
+
+    if (d < bestDist) {
+      bestDist = d;
+      best = t;
+    }
+  }
+
+  return best;
+}
+
+function estimateScaleAndTranslation(
+  src: Point[],
+  dst: Point[]
+): Transform {
+  const muSrc = centroid(src);
+  const muDst = centroid(dst);
+
+  let num = 0;
+  let den = 0;
+
+  for (let i = 0; i < src.length; i++) {
+    const xs = src[i].x - muSrc.x;
+    const ys = src[i].y - muSrc.y;
+    const xd = dst[i].x - muDst.x;
+    const yd = dst[i].y - muDst.y;
+
+    num += xd * xs + yd * ys;
+    den += xs * xs + ys * ys;
+  }
+
+  const scale = den === 0 ? 1 : num / den;
+
+  return {
+    scale,
+    tx: muDst.x - scale * muSrc.x,
+    ty: muDst.y - scale * muSrc.y,
+  };
+}
+
+function meanSquaredError(a: Point[], b: Point[]): number {
+  let err = 0;
+  for (let i = 0; i < a.length; i++) {
+    const dx = a[i].x - b[i].x;
+    const dy = a[i].y - b[i].y;
+    err += dx * dx + dy * dy;
+  }
+  return err / a.length;
+}
+
+export function icp(
+  source: Point[],
+  target: Point[],
+  maxIterations = 50,
+  tolerance = 1e-6
+): Transform {
+  let transform: Transform = { scale: 1, tx: 0, ty: 0 };
+
+  let prevError = Infinity;
+
+  for (let iter = 0; iter < maxIterations; iter++) {
+    const transformed = source.map(p => applyTransform(p, transform));
+
+    const matched: Point[] = transformed.map(p =>
+      nearestNeighbor(p, target)
+    );
+
+    const delta = estimateScaleAndTranslation(transformed, matched);
+
+    transform = {
+      scale: transform.scale * delta.scale,
+      tx: delta.scale * transform.tx + delta.tx,
+      ty: delta.scale * transform.ty + delta.ty,
+    };
+
+    const newTransformed = source.map(p => applyTransform(p, transform));
+    const error = meanSquaredError(newTransformed, matched);
+
+    if (Math.abs(prevError - error) < tolerance) {
+      break;
+    }
+
+    prevError = error;
+  }
+
+  return transform;
+}
+
 export interface AlignmentSuggestion {
   transform: ImageTransform;
   offset: [number, number];
@@ -710,75 +829,72 @@ export async function suggestImageAlignment(
       let contourMatched: Array<[number, number]> = [];
       
       if (mapScreenPoints.length >= 50) {
-        const suggestion = suggestFromSamples(
-          mapScreenPoints,
-          overlayPixelPoints,
-          naturalWidth,
-          naturalHeight,
-          transform,
-          mapWidth,
-          mapHeight,
-          'fit',
-          'areas',
-        );
+        // Use ICP to find best alignment
+        const srcPoints: Point[] = overlayPixelPoints.map(p => ({ x: p[0], y: p[1] }));
+        const dstPoints: Point[] = mapScreenPoints.map(p => ({ x: p[0], y: p[1] }));
         
-        if (suggestion) {
-          // Project contour points with the suggested transform and offset
-          const projectedContour = projectOverlayPoints(
-            overlayPixelPoints,
-            naturalWidth,
-            naturalHeight,
-            suggestion.transform,
-            mapWidth,
-            mapHeight,
-          );
-          
-          // Find matched pairs: contour point close to map point
-          const threshold = 8;
-          const matchedMapIndices = new Set<number>();
-          
-          for (const cp of projectedContour) {
-            for (let mi = 0; mi < mapScreenPoints.length; mi++) {
-              const mp = mapScreenPoints[mi];
-              const dx = cp[0] - mp[0] - suggestion.offset[0];
-              const dy = cp[1] - mp[1] - suggestion.offset[1];
-              if (dx * dx + dy * dy <= threshold * threshold) {
-                matchedMapIndices.add(mi);
-                break;
-              }
+        const icpResult = icp(srcPoints, dstPoints, 30, 1e-4);
+        console.log('ICP result:', icpResult);
+        
+        // Convert ICP result to scale factor (relative to current transform)
+        const scaleFactor = icpResult.scale;
+        const offsetX = icpResult.tx;
+        const offsetY = icpResult.ty;
+        
+        // Calculate score based on final error
+        const finalTransformed = srcPoints.map(p => applyTransform(p, icpResult));
+        const matched = finalTransformed.map(p => nearestNeighbor(p, dstPoints));
+        const mse = meanSquaredError(finalTransformed, matched);
+        const score = Math.max(0, 1 - Math.sqrt(mse) / 100); // Convert RMSE to score
+        
+        console.log('ICP MSE:', mse, 'score:', score);
+        
+        // Find matched pairs for display
+        const threshold = 8;
+        const matchedContourIndices = new Set<number>();
+        const matchedMapIndices = new Set<number>();
+        
+        for (let ci = 0; ci < finalTransformed.length; ci++) {
+          const cp = finalTransformed[ci];
+          for (let mi = 0; mi < dstPoints.length; mi++) {
+            const mp = dstPoints[mi];
+            const dx = cp.x - mp.x;
+            const dy = cp.y - mp.y;
+            if (dx * dx + dy * dy <= threshold * threshold) {
+              matchedContourIndices.add(ci);
+              matchedMapIndices.add(mi);
+              break;
             }
           }
-          
-          // Get geo coordinates for matched map points
-          mapMatched = mapAreaGeoPoints
-            .filter((_, i) => matchedMapIndices.has(i));
-          
-          // Get geo coordinates for matched contour points
-          const matchedContourIndices = new Set<number>();
-          for (let ci = 0; ci < projectedContour.length; ci++) {
-            const cp = projectedContour[ci];
-            for (let mi = 0; mi < mapScreenPoints.length; mi++) {
-              const mp = mapScreenPoints[mi];
-              const dx = cp[0] - mp[0] - suggestion.offset[0];
-              const dy = cp[1] - mp[1] - suggestion.offset[1];
-              if (dx * dx + dy * dy <= threshold * threshold) {
-                matchedContourIndices.add(ci);
-                break;
-              }
-            }
-          }
-          
-          contourMatched = pixelCoords.filter((_, i) => matchedContourIndices.has(i));
-          
-          console.log('Matched:', mapMatched.length, 'map points,', contourMatched.length, 'contour points');
-          
-          suggestion.pickedColor = colorHex;
-          suggestion.extractedFeatures = fc;
-          suggestion.matchedPixelSamples = pixelCoords;
-          suggestion.mapMatchedPoints = mapAreaGeoPoints;  // All map points (for display)
-          suggestion.contourMatchedPoints = contourMatched; // Only matched contour points
-          return suggestion;
         }
+        
+        contourMatched = pixelCoords.filter((_, i) => matchedContourIndices.has(i));
+        mapMatched = mapAreaGeoPoints.filter((_, i) => matchedMapIndices.has(i));
+        
+        console.log('Matched:', mapMatched.length, 'map points,', contourMatched.length, 'contour points');
+        
+        // Create suggestion with ICP results
+        const newTransform: ImageTransform = {
+          ...transform,
+          scaleX: transform.scaleX * scaleFactor,
+          scaleY: transform.scaleY * scaleFactor,
+        };
+        
+        const suggestion: AlignmentSuggestion = {
+          transform: newTransform,
+          offset: [offsetX, offsetY],
+          score,
+          matchedSamples: contourMatched.length,
+          totalSamples: pixelCoords.length,
+          source: 'areas',
+          extractedFeatures: fc,
+          matchedPixelSamples: pixelCoords,
+          pickedColor: colorHex,
+          mapMatchedPoints: mapAreaGeoPoints,
+          contourMatchedPoints: contourMatched,
+        };
+        
+        return suggestion;
       }
       
       return {
