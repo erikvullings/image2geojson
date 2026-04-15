@@ -93,6 +93,9 @@ export const MapView: m.Component<Attrs> = {
         map.addLayer({
           id: 'overlay-image-layer', type: 'raster', source: 'overlay-image',
           paint: { 'raster-opacity': img.opacity },
+          minzoom: 0,
+          maxzoom: 24,
+          metadata: { 'overlay-base': 'true' },
         });
       }
     });

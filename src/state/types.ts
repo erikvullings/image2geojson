@@ -39,6 +39,7 @@ export interface TraceSettings {
   threshold: number;
   simplification: number;
   blurRadius: number;
+  fitSource: 'areas' | 'lines' | 'auto';
 }
 
 export interface UIState {

@@ -1,10 +1,13 @@
 import m from 'mithril';
 import maplibregl from 'maplibre-gl';
+import type { FeatureCollection } from 'geojson';
 import type { MeiosisCell } from '../state';
 import type { AppState, ImageTransform } from '../state/types';
 import { suggestImageAlignment, type AlignmentMode, type AlignmentSuggestion } from '../services/alignment';
 import { computeOverlayCorners } from '../services/imageOverlayGeometry';
 import { getMap } from './MapView';
+
+const SUGGESTION_PREVIEW_SOURCE = 'suggestion-preview';
 
 interface Attrs {
   cell: MeiosisCell<AppState>;
@@ -22,6 +25,63 @@ let alignmentSuggestion: AlignmentSuggestion | null = null;
 let alignmentError = '';
 let alignmentMode: AlignmentMode = 'fit';
 let showRotation = false;
+let pickingColor = false;
+let colorTolerance = 15;
+
+function showExtractedFeaturesOnMap(fc: FeatureCollection) {
+  const map = getMap();
+  if (!map) return;
+  clearExtractedFeaturesFromMap();
+  
+  // Store current opacity for restore
+  const overlayLayer = map.getLayer('overlay-image-layer');
+  if (overlayLayer) {
+    (window as any).__savedOverlayOpacity = map.getPaintProperty('overlay-image-layer', 'raster-opacity');
+    map.setPaintProperty('overlay-image-layer', 'raster-opacity', 0.3);
+  }
+  
+  if (fc.features.length === 0) return;
+  
+  // Extract points from MultiPoint
+  const features = fc.features.flatMap(f => {
+    if (f.geometry.type === 'MultiPoint') {
+      return f.geometry.coordinates.map(c => ({
+        type: 'Feature' as const,
+        properties: {},
+        geometry: { type: 'Point' as const, coordinates: c as [number, number] }
+      }));
+    }
+    return [];
+  });
+  
+  if (features.length === 0) return;
+  
+  const pointsFc: FeatureCollection = { type: 'FeatureCollection', features };
+  map.addSource(SUGGESTION_PREVIEW_SOURCE, { type: 'geojson', data: pointsFc });
+  map.addLayer({ id: 'suggestion-preview-points', type: 'circle', source: SUGGESTION_PREVIEW_SOURCE,
+    paint: { 'circle-color': '#2a9d8f', 'circle-radius': 4, 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 }
+  });
+  if (map.getLayer('overlay-image-layer')) {
+    map.moveLayer('suggestion-preview-points', 'overlay-image-layer');
+  }
+}
+
+function clearExtractedFeaturesFromMap() {
+  const map = getMap();
+  if (!map) return;
+  try {
+    for (const id of ['suggestion-preview-points', 'suggestion-preview-lines', 'suggestion-preview-fills']) {
+      if (map.getLayer(id)) map.removeLayer(id);
+    }
+    if (map.getSource(SUGGESTION_PREVIEW_SOURCE)) map.removeSource(SUGGESTION_PREVIEW_SOURCE);
+    // Restore overlay opacity
+    const saved = (window as any).__savedOverlayOpacity;
+    if (saved !== undefined && map.getLayer('overlay-image-layer')) {
+      map.setPaintProperty('overlay-image-layer', 'raster-opacity', saved);
+      (window as any).__savedOverlayOpacity = undefined;
+    }
+  } catch { /* ignore */ }
+}
 
 function onGlobalMouseMove(ev: MouseEvent) {
   if (!activeHandle || !startTransform || !activeCell) return;
@@ -264,20 +324,15 @@ export const ImageOverlay: m.Component<Attrs> = {
       activeCell = cell;
     };
 
-    const setT = (partial: Partial<ImageTransform>) =>
-      {
-        alignmentSuggestion = null;
-        alignmentError = '';
-        cell.update({ image: { ...img, transform: { ...t, ...partial } } });
-      };
-
-    const runSuggestion = async (mode: AlignmentMode) => {
+    const runSuggestion = async (mode: AlignmentMode, pickPoint?: { x: number; y: number; tolerance: number }) => {
       const map2 = getMap();
       if (!map2) return;
       aligning = true;
       alignmentMode = mode;
+      clearExtractedFeaturesFromMap();
       alignmentSuggestion = null;
       alignmentError = '';
+      pickingColor = false;
       m.redraw();
       try {
         const suggestion = await suggestImageAlignment(
@@ -288,13 +343,19 @@ export const ImageOverlay: m.Component<Attrs> = {
           t,
           cell.state.ui.traceSettings,
           mode,
+          pickPoint,
         );
         if (!suggestion) {
           alignmentError = mode === 'fit'
-            ? 'No confident fit found. The app first tries water/forest-like areas, then falls back to map lines. Zoom into the relevant area and keep water, vegetation, roads, or boundaries visible.'
+            ? pickPoint
+              ? 'No confident fit found for selected color. Try a different color or area.'
+              : 'No confident fit found. The app first tries water/forest-like areas, then falls back to map lines. Zoom into the relevant area and keep water, vegetation, roads, or boundaries visible.'
             : 'No confident angle/skew refinement found. Try running fit first, then zoom in further before refining.';
         } else {
           alignmentSuggestion = suggestion;
+          if (suggestion.extractedFeatures.features.length > 0) {
+            showExtractedFeaturesOnMap(suggestion.extractedFeatures);
+          }
         }
       } catch {
         alignmentError = 'Alignment suggestion failed.';
@@ -303,6 +364,14 @@ export const ImageOverlay: m.Component<Attrs> = {
         m.redraw();
       }
     };
+
+    const setT = (partial: Partial<ImageTransform>) =>
+      {
+        clearExtractedFeaturesFromMap();
+        alignmentSuggestion = null;
+        alignmentError = '';
+        cell.update({ image: { ...img, transform: { ...t, ...partial } } });
+      };
 
     return m('div#image-overlay', [
       // Frame: centred at viewport mid + user translation, then rotated/skewed/scaled
@@ -317,6 +386,7 @@ export const ImageOverlay: m.Component<Attrs> = {
           cursor: showRotation ? 'grab' : 'move',
         },
         onmousedown: (e: MouseEvent) => {
+          if (pickingColor) return;
           if (e.target === e.currentTarget || (e.target as HTMLElement).tagName === 'IMG') {
             showRotation = !showRotation;
             e.preventDefault();
@@ -327,7 +397,24 @@ export const ImageOverlay: m.Component<Attrs> = {
           }
         },
       }, [
-        m('img', { src: img.src, draggable: false }),
+        pickingColor && m('div', {
+          style: { position: 'absolute', top: 8, left: 8, background: '#2a9d8f', color: 'white', padding: '4px 8px', borderRadius: 4, fontSize: 12, pointerEvents: 'none', zIndex: 10 },
+        }, '🎨 Click color on image'),
+        m('div', {
+          style: { width: '100%', height: '100%', position: 'absolute', cursor: pickingColor ? 'crosshair' : undefined },
+          onclick: pickingColor ? (e: MouseEvent) => {
+            const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            const rawX = x * (img.naturalWidth / rect.width);
+            const rawY = y * (img.naturalHeight / rect.height);
+            console.log('Click raw coordinates:', rawX, rawY, 'from', rect.width, rect.height, 'natural:', img.naturalWidth, img.naturalHeight);
+            pickingColor = false;
+            void runSuggestion('fit', { x: rawX, y: rawY, tolerance: colorTolerance });
+          } : undefined,
+        }, [
+          m('img', { src: img.src, draggable: false, style: { width: '100%', height: '100%' } }),
+        ]),
         ...(showRotation ? [
           m('div.handle.handle-rtl', { onmousedown: md('rtl'), title: 'Drag to rotate (shift for 15deg snap)' }),
           m('div.handle.handle-rtr', { onmousedown: md('rtr'), title: 'Drag to rotate (shift for 15deg snap)' }),
@@ -338,17 +425,28 @@ export const ImageOverlay: m.Component<Attrs> = {
           m('div.handle.handle-tr', { onmousedown: md('tr'), title: 'Drag to scale (opposite corner locked)' }),
           m('div.handle.handle-br', { onmousedown: md('br'), title: 'Drag to scale (opposite corner locked)' }),
           m('div.handle.handle-bl', { onmousedown: md('bl'), title: 'Drag to scale (opposite corner locked)' }),
+]),
+        ...(showRotation ? [
+          m('div.handle.handle-rtl', { onmousedown: md('rtl'), title: 'Drag to rotate (shift for 15deg snap)', style: { pointerEvents: pickingColor ? 'none' : undefined } }),
+          m('div.handle.handle-rtr', { onmousedown: md('rtr'), title: 'Drag to rotate (shift for 15deg snap)', style: { pointerEvents: pickingColor ? 'none' : undefined } }),
+          m('div.handle.handle-rbr', { onmousedown: md('rbr'), title: 'Drag to rotate (shift for 15deg snap)', style: { pointerEvents: pickingColor ? 'none' : undefined } }),
+          m('div.handle.handle-rbl', { onmousedown: md('rbl'), title: 'Drag to rotate (shift for 15deg snap)', style: { pointerEvents: pickingColor ? 'none' : undefined } }),
+        ] : [
+          m('div.handle.handle-tl', { onmousedown: md('tl'), title: 'Drag to scale (opposite corner locked)', style: { pointerEvents: pickingColor ? 'none' : undefined } }),
+          m('div.handle.handle-tr', { onmousedown: md('tr'), title: 'Drag to scale (opposite corner locked)', style: { pointerEvents: pickingColor ? 'none' : undefined } }),
+          m('div.handle.handle-br', { onmousedown: md('br'), title: 'Drag to scale (opposite corner locked)', style: { pointerEvents: pickingColor ? 'none' : undefined } }),
+          m('div.handle.handle-bl', { onmousedown: md('bl'), title: 'Drag to scale (opposite corner locked)', style: { pointerEvents: pickingColor ? 'none' : undefined } }),
         ]),
         ...(showRotation ? [
-          m('div.handle.handle-tm', { onmousedown: md('tm'), title: 'Drag to scale vertically (bottom locked)' }),
-          m('div.handle.handle-bm', { onmousedown: md('bm'), title: 'Drag to scale vertically (top locked)' }),
-          m('div.handle.handle-lm', { onmousedown: md('lm'), title: 'Drag to scale horizontally (right locked)' }),
-          m('div.handle.handle-rm', { onmousedown: md('rm'), title: 'Drag to scale horizontally (left locked)' }),
+          m('div.handle.handle-tm', { onmousedown: md('tm'), title: 'Drag to scale vertically (bottom locked)', style: { pointerEvents: pickingColor ? 'none' : undefined } }),
+          m('div.handle.handle-bm', { onmousedown: md('bm'), title: 'Drag to scale vertically (top locked)', style: { pointerEvents: pickingColor ? 'none' : undefined } }),
+          m('div.handle.handle-lm', { onmousedown: md('lm'), title: 'Drag to scale horizontally (right locked)', style: { pointerEvents: pickingColor ? 'none' : undefined } }),
+          m('div.handle.handle-rm', { onmousedown: md('rm'), title: 'Drag to scale horizontally (left locked)', style: { pointerEvents: pickingColor ? 'none' : undefined } }),
         ] : [
-          m('div.handle.handle-tm', { onmousedown: md('tm'), title: 'Drag to scale vertically (bottom locked)' }),
-          m('div.handle.handle-bm', { onmousedown: md('bm'), title: 'Drag to scale vertically (top locked)' }),
-          m('div.handle.handle-lm', { onmousedown: md('lm'), title: 'Drag to scale horizontally (right locked)' }),
-          m('div.handle.handle-rm', { onmousedown: md('rm'), title: 'Drag to scale horizontally (left locked)' }),
+          m('div.handle.handle-tm', { onmousedown: md('tm'), title: 'Drag to scale vertically (bottom locked)', style: { pointerEvents: pickingColor ? 'none' : undefined } }),
+          m('div.handle.handle-bm', { onmousedown: md('bm'), title: 'Drag to scale vertically (top locked)', style: { pointerEvents: pickingColor ? 'none' : undefined } }),
+          m('div.handle.handle-lm', { onmousedown: md('lm'), title: 'Drag to scale horizontally (right locked)', style: { pointerEvents: pickingColor ? 'none' : undefined } }),
+          m('div.handle.handle-rm', { onmousedown: md('rm'), title: 'Drag to scale horizontally (left locked)', style: { pointerEvents: pickingColor ? 'none' : undefined } }),
         ]),
       ]),
 
@@ -386,6 +484,13 @@ export const ImageOverlay: m.Component<Attrs> = {
           disabled: aligning,
           onclick: () => void runSuggestion('fit'),
         }, aligning && alignmentMode === 'fit' ? '⏳ Fitting…' : '🎯 Suggest fit'),
+        m('button.btn', { class: pickingColor ? 'active' : '', onclick: () => { pickingColor = !pickingColor; m.redraw(); } }, pickingColor ? 'Cancel pick' : '🎨 Pick & fit'),
+        pickingColor && m('label', { style: { display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8, fontSize: 12 } }, [
+          '±',
+          m('input', { type: 'range', min: 3, max: 50, step: 2, value: colorTolerance,
+            oninput: (e: Event) => { colorTolerance = parseInt((e.target as HTMLInputElement).value, 10); m.redraw(); } }),
+          m('span', colorTolerance),
+        ]),
         m('button.btn', {
           disabled: aligning,
           onclick: () => void runSuggestion('refine'),
@@ -427,9 +532,21 @@ export const ImageOverlay: m.Component<Attrs> = {
         m('div', `Suggested scale: ${alignmentSuggestion.transform.scaleX.toFixed(2)}x horizontally, ${alignmentSuggestion.transform.scaleY.toFixed(2)}x vertically. Rotation: ${alignmentSuggestion.transform.rotation.toFixed(1)}°.`),
         m('div', `Suggested skew: X ${alignmentSuggestion.transform.skewX.toFixed(1)}°, Y ${alignmentSuggestion.transform.skewY.toFixed(1)}°.`),
         m('div', `Confidence: ${Math.round(alignmentSuggestion.score * 100)}% from ${alignmentSuggestion.matchedSamples}/${alignmentSuggestion.totalSamples} sampled trace points.`),
+        alignmentSuggestion.pickedColor && m('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } }, [
+          'Picked color: ',
+          m('div', { style: { width: 20, height: 20, backgroundColor: alignmentSuggestion.pickedColor, border: '1px solid #ccc', borderRadius: 3 } }),
+          m('span', alignmentSuggestion.pickedColor),
+        ]),
+        alignmentSuggestion.pickedColor && m('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } }, [
+        'Picked color: ',
+        m('div', { style: { width: 20, height: 20, backgroundColor: alignmentSuggestion.pickedColor, border: '1px solid #ccc', borderRadius: 3 } }),
+        m('span', alignmentSuggestion.pickedColor),
+      ]),
+      m('div', `${alignmentSuggestion.matchedPixelSamples.length} points (color-matched areas in teal)`),
         m('div.alignment-actions', [
           m('button.btn.btn-primary', {
             onclick: () => {
+              clearExtractedFeaturesFromMap();
               cell.update({ image: { ...img, transform: alignmentSuggestion!.transform } });
               alignmentSuggestion = null;
               alignmentError = '';
@@ -437,6 +554,7 @@ export const ImageOverlay: m.Component<Attrs> = {
           }, 'Apply suggestion'),
           m('button.btn', {
             onclick: () => {
+              clearExtractedFeaturesFromMap();
               alignmentSuggestion = null;
               alignmentError = '';
             },

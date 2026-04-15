@@ -1,6 +1,7 @@
 import type maplibregl from 'maplibre-gl';
 import type { ImageTransform, TraceSettings } from '../state/types';
 import { traceImageToPixelLines } from './imageTracer';
+import type { Feature, LineString, FeatureCollection } from 'geojson';
 
 export interface AlignmentSuggestion {
   transform: ImageTransform;
@@ -9,6 +10,9 @@ export interface AlignmentSuggestion {
   matchedSamples: number;
   totalSamples: number;
   source: 'areas' | 'lines';
+  extractedFeatures: GeoJSON.FeatureCollection;
+  matchedPixelSamples: Array<[number, number]>;
+  pickedColor?: string;
 }
 
 export type AlignmentMode = 'fit' | 'refine';
@@ -22,6 +26,32 @@ const SCALE_DELTAS_COARSE = [0.75, 0.9, 1, 1.1, 1.25];
 const SCALE_DELTAS_FINE = [0.92, 0.97, 1, 1.03, 1.08];
 const ROTATION_DELTAS_COARSE = [-8, -4, 0, 4, 8];
 const ROTATION_DELTAS_FINE = [-2, -1, 0, 1, 2];
+
+function pixelSamplesToGeoJSON(
+  pixelSamples: Array<[number, number]>,
+  naturalWidth: number,
+  naturalHeight: number,
+  transform: ImageTransform,
+  map: maplibregl.Map,
+): FeatureCollection {
+  const width = map.getContainer().clientWidth;
+  const height = map.getContainer().clientHeight;
+  if (pixelSamples.length === 0) return { type: 'FeatureCollection', features: [] };
+
+  const coords: Array<[number, number]> = [];
+  for (const [px, py] of pixelSamples) {
+    const screenPt = projectOverlayPoint(px, py, naturalWidth, naturalHeight, transform, width, height);
+    const lngLat = map.unproject(screenPt);
+    coords.push([lngLat.lng, lngLat.lat]);
+  }
+
+  const features: Feature<LineString>[] = [{
+    type: 'Feature' as const,
+    properties: {},
+    geometry: { type: 'LineString' as const, coordinates: coords },
+  }];
+  return { type: 'FeatureCollection' as const, features };
+}
 
 function projectOverlayPoint(
   px: number,
@@ -387,6 +417,7 @@ function buildSuggestion(
   offset: { dx: number; dy: number; score: number },
   totalSamples: number,
   source: 'areas' | 'lines',
+  pixelSamples: Array<[number, number]>,
 ): AlignmentSuggestion {
   return {
     transform: {
@@ -399,6 +430,8 @@ function buildSuggestion(
     matchedSamples: Math.round(offset.score * totalSamples),
     totalSamples,
     source,
+    extractedFeatures: { type: 'FeatureCollection', features: [] },
+    matchedPixelSamples: pixelSamples,
   };
 }
 
@@ -442,7 +475,7 @@ function suggestFromSamples(
     );
     const offset = searchBestOffset(projected, mapPoints, width, height);
     if (!offset) return null;
-    return buildSuggestion(candidateTransform, offset, projected.length, source);
+    return buildSuggestion(candidateTransform, offset, projected.length, source, overlayPixelPoints);
   };
 
   if (mode === 'fit') {
@@ -507,7 +540,7 @@ function suggestFromSamples(
           );
           const offset = searchBestOffset(projected, mapPoints, width, height);
           if (!offset) continue;
-          const candidate = buildSuggestion(candidateTransform, offset, projected.length, source);
+          const candidate = buildSuggestion(candidateTransform, offset, projected.length, source, overlayPixelPoints);
           if (candidate.score > bestSuggestion.score) bestSuggestion = candidate;
         }
       }
@@ -525,59 +558,136 @@ export async function suggestImageAlignment(
   transform: ImageTransform,
   settings: TraceSettings,
   mode: AlignmentMode,
+  pickPoint?: { x: number; y: number; tolerance: number },
 ): Promise<AlignmentSuggestion | null> {
   const width = map.getContainer().clientWidth;
   const height = map.getContainer().clientHeight;
+  const pixelLines = await traceImageToPixelLines(imageSrc, settings);
+
   if (mode === 'fit') {
-    const [overlayAreaPoints, mapAreaPoints, pixelLines] = await Promise.all([
+    const [overlayAreaPoints, mapAreaPoints, overlayLinePoints] = await Promise.all([
       collectOverlayAreaSamples(imageSrc, MAX_OVERLAY_SAMPLES),
       Promise.resolve(collectMapAreaSamples(map)),
-      traceImageToPixelLines(imageSrc, settings),
+      Promise.resolve((() => {
+        const pts: Array<[number, number]> = [];
+        for (const line of pixelLines) {
+          const stride = Math.max(1, Math.floor(line.length / 30));
+          for (const point of samplePolyline(line, stride, Math.max(6, Math.floor(MAX_OVERLAY_SAMPLES / 24)))) {
+            pts.push(point);
+            if (pts.length >= MAX_OVERLAY_SAMPLES) break;
+          }
+          if (pts.length >= MAX_OVERLAY_SAMPLES) break;
+        }
+        return pts;
+      })()),
     ]);
 
-    const overlayLinePoints: Array<[number, number]> = [];
-    for (const line of pixelLines) {
-      const stride = Math.max(1, Math.floor(line.length / 30));
-      for (const point of samplePolyline(line, stride, Math.max(6, Math.floor(MAX_OVERLAY_SAMPLES / 24)))) {
-        overlayLinePoints.push(point);
-        if (overlayLinePoints.length >= MAX_OVERLAY_SAMPLES) break;
+    let overlaySamples = overlayAreaPoints;
+    let mapSamples = mapAreaPoints;
+    let source: 'areas' | 'lines' = 'areas';
+
+    if (pickPoint) {
+      const canvas = document.createElement('canvas');
+      const MAX_DIM = 800;
+      const sc = Math.min(1, MAX_DIM / Math.max(naturalWidth, naturalHeight));
+      const w = Math.round(naturalWidth * sc);
+      const h = Math.round(naturalHeight * sc);
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      
+      const img2 = new Image();
+      img2.src = imageSrc;
+      await new Promise(r => { img2.onload = r; img2.onerror = r; });
+      ctx.drawImage(img2, 0, 0, w, h);
+      const rgba = ctx.getImageData(0, 0, w, h).data;
+      
+      // Use raw pixel coordinates from click - scale to match canvas size
+      const tPx = Math.round(pickPoint.x * sc);
+      const tPy = Math.round(pickPoint.y * sc);
+      console.log('Click at canvas pixel:', tPx, tPy, 'image dims:', w, h, 'natural:', naturalWidth, naturalHeight, 'scale:', sc);
+      
+      if (tPx < 0 || tPx >= w || tPy < 0 || tPy >= h) {
+        console.log('Click outside canvas bounds');
+        return null;
       }
-      if (overlayLinePoints.length >= MAX_OVERLAY_SAMPLES) break;
+      
+      const tR = rgba[(tPy * w + tPx) * 4];
+      const tG = rgba[(tPy * w + tPx) * 4 + 1];
+      const tB = rgba[(tPy * w + tPx) * 4 + 2];
+      const colorHex = '#' + [tR, tG, tB].map(x => x.toString(16).padStart(2, '0')).join('');
+      console.log('Picked color:', colorHex, 'tolerance:', pickPoint.tolerance);
+      
+      // Tolerance - use directly (not multiplied)
+      const tolerance = pickPoint.tolerance;
+      const tolSq = tolerance * tolerance;
+      
+      // Global color matching: scan ALL pixels and collect those matching the color
+      const visited = new Set<string>();
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const key = `${x},${y}`;
+          if (visited.has(key)) continue;
+          const idx = (y * w + x) * 4;
+          const dist = Math.pow(rgba[idx] - tR, 2) + Math.pow(rgba[idx + 1] - tG, 2) + Math.pow(rgba[idx + 2] - tB, 2);
+          if (dist <= tolSq) {
+            visited.add(key);
+          }
+        }
+      }
+      
+      console.log('Global color match found:', visited.size, 'pixels (tolerance:', tolerance, 'tolSq:', tolSq, ')');
+      
+      const mapWidth = map.getContainer().clientWidth;
+      const mapHeight = map.getContainer().clientHeight;
+      const pixelCoords: Array<[number, number]> = [];
+      
+      // Sample from visited pixels
+      const step = Math.max(1, Math.floor(visited.size / 500));
+      let i = 0;
+      for (const key of visited) {
+        if (i++ % step !== 0) continue;
+        const [x, y] = key.split(',').map(Number);
+        const px = x / sc;
+        const py = y / sc;
+        const screenPt = projectOverlayPoint(px, py, naturalWidth, naturalHeight, transform, mapWidth, mapHeight);
+        const lngLat = map.unproject(screenPt);
+        pixelCoords.push([lngLat.lng, lngLat.lat]);
+      }
+      
+      console.log('Projected points:', pixelCoords.length);
+      
+      if (pixelCoords.length < 10) return null;
+      
+      const fc: FeatureCollection = { type: 'FeatureCollection', features: [{
+        type: 'Feature', properties: {}, geometry: { type: 'MultiPoint', coordinates: pixelCoords }
+      }]};
+      
+      const suggestion: AlignmentSuggestion = {
+        transform, offset: [0, 0], score: 0.5, matchedSamples: pixelCoords.length, totalSamples: pixelCoords.length,
+        source: 'areas', extractedFeatures: fc, matchedPixelSamples: pixelCoords, pickedColor: colorHex
+      };
+      return suggestion;
     }
 
-    const areaSuggestion = suggestFromSamples(
-      mapAreaPoints,
-      overlayAreaPoints,
-      naturalWidth,
-      naturalHeight,
-      transform,
-      width,
-      height,
-      'fit',
-      'areas',
-    );
-    if (areaSuggestion && areaSuggestion.score >= 0.14) return areaSuggestion;
+    const suggestion = suggestFromSamples(mapSamples, overlaySamples, naturalWidth, naturalHeight, transform, width, height, 'fit', source);
+    if (suggestion) {
+      suggestion.extractedFeatures = pixelSamplesToGeoJSON(suggestion.matchedPixelSamples, naturalWidth, naturalHeight, suggestion.transform, map);
+      if (suggestion.score >= 0.14) return suggestion;
+    }
 
-    const lineSuggestion = suggestFromSamples(
-      collectMapLineSamples(map),
-      overlayLinePoints,
-      naturalWidth,
-      naturalHeight,
-      transform,
-      width,
-      height,
-      'fit',
-      'lines',
-    );
+    const lineSuggestion = suggestFromSamples(collectMapLineSamples(map), overlayLinePoints, naturalWidth, naturalHeight, transform, width, height, 'fit', 'lines');
+    if (lineSuggestion) {
+      lineSuggestion.extractedFeatures = pixelSamplesToGeoJSON(lineSuggestion.matchedPixelSamples, naturalWidth, naturalHeight, lineSuggestion.transform, map);
+      if (!pickPoint) return lineSuggestion;
+    }
 
-    if (!areaSuggestion) return lineSuggestion;
-    if (!lineSuggestion) return areaSuggestion;
-    return lineSuggestion.score > areaSuggestion.score ? lineSuggestion : areaSuggestion;
+    return pickPoint ? null : lineSuggestion;
   }
 
   const mapLinePoints = collectMapLineSamples(map);
   if (mapLinePoints.length < 50) return null;
-  const pixelLines = await traceImageToPixelLines(imageSrc, settings);
   const overlayLinePoints: Array<[number, number]> = [];
   for (const line of pixelLines) {
     const stride = Math.max(1, Math.floor(line.length / 30));
@@ -588,17 +698,11 @@ export async function suggestImageAlignment(
     if (overlayLinePoints.length >= MAX_OVERLAY_SAMPLES) break;
   }
 
-  return suggestFromSamples(
-    mapLinePoints,
-    overlayLinePoints,
-    naturalWidth,
-    naturalHeight,
-    transform,
-    width,
-    height,
-    'refine',
-    'lines',
-  );
+  const result = suggestFromSamples(mapLinePoints, overlayLinePoints, naturalWidth, naturalHeight, transform, width, height, 'refine', 'lines');
+  if (result) {
+    result.extractedFeatures = pixelSamplesToGeoJSON(result.matchedPixelSamples, naturalWidth, naturalHeight, result.transform, map);
+  }
+  return result;
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {

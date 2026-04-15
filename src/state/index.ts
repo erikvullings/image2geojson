@@ -44,6 +44,7 @@ export const defaultState: AppState = {
       threshold: 128,
       simplification: 0.00001,
       blurRadius: 1,
+      fitSource: 'auto',
     },
   },
 };
