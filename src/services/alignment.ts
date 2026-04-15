@@ -689,12 +689,35 @@ export async function suggestImageAlignment(
       
       if (pixelCoords.length < 10) return null;
       
-      // Always show the contour on the map
+      // Match contour points against map area samples (already in screen pixels)
+      const mapScreenPoints = collectMapAreaSamples(map);
+      console.log('Map area samples:', mapScreenPoints.length);
+      
+      if (mapScreenPoints.length >= 50) {
+        const suggestion = suggestFromSamples(
+          mapScreenPoints,
+          overlayPixelPoints,
+          naturalWidth,
+          naturalHeight,
+          transform,
+          mapWidth,
+          mapHeight,
+          'fit',
+          'areas',
+        );
+        
+        if (suggestion) {
+          suggestion.pickedColor = colorHex;
+          suggestion.extractedFeatures = pixelSamplesToGeoJSON(suggestion.matchedPixelSamples, naturalWidth, naturalHeight, suggestion.transform, map);
+          return suggestion;
+        }
+      }
+      
+      // Show contour on map
       const fc: FeatureCollection = { type: 'FeatureCollection', features: [{
         type: 'Feature', properties: {}, geometry: { type: 'MultiPoint', coordinates: pixelCoords }
       }]};
       
-      // Return basic suggestion with contour shown (matching will be done in next iteration)
       return {
         transform, offset: [0, 0], score: 0.5, matchedSamples: pixelCoords.length, totalSamples: pixelCoords.length,
         source: 'areas', extractedFeatures: fc, matchedPixelSamples: pixelCoords, pickedColor: colorHex
