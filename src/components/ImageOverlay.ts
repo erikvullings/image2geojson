@@ -43,6 +43,20 @@ function showExtractedFeaturesOnMap(suggestion: AlignmentSuggestion) {
     map.setPaintProperty('overlay-image-layer', 'raster-opacity', 0.3);
   }
   
+  // Show map area points (all - yellow)
+  if (suggestion.mapMatchedPoints && suggestion.mapMatchedPoints.length > 0) {
+    const mapFeatures = suggestion.mapMatchedPoints.map(c => ({
+      type: 'Feature' as const,
+      properties: {},
+      geometry: { type: 'Point' as const, coordinates: c as [number, number] }
+    }));
+    const mapFc: FeatureCollection = { type: 'FeatureCollection', features: mapFeatures };
+    map.addSource(MAP_MATCHED_SOURCE, { type: 'geojson', data: mapFc });
+    map.addLayer({ id: 'map-area-points', type: 'circle', source: MAP_MATCHED_SOURCE,
+      paint: { 'circle-color': '#f4a261', 'circle-radius': 3, 'circle-stroke-color': '#fff', 'circle-stroke-width': 1 }
+    });
+  }
+  
   // Show contour points (teal)
   if (suggestion.matchedPixelSamples.length > 0) {
     const contourFeatures = suggestion.matchedPixelSamples.map(c => ({
@@ -57,7 +71,7 @@ function showExtractedFeaturesOnMap(suggestion: AlignmentSuggestion) {
     });
   }
   
-  // Show contour-matched points (orange)
+  // Show contour-matched points (orange - subset of contour that matched)
   if (suggestion.contourMatchedPoints && suggestion.contourMatchedPoints.length > 0) {
     const matchedFeatures = suggestion.contourMatchedPoints.map(c => ({
       type: 'Feature' as const,
@@ -71,24 +85,10 @@ function showExtractedFeaturesOnMap(suggestion: AlignmentSuggestion) {
     });
   }
   
-  // Show map-matched points (yellow)
-  if (suggestion.mapMatchedPoints && suggestion.mapMatchedPoints.length > 0) {
-    const mapMatchedFeatures = suggestion.mapMatchedPoints.map(c => ({
-      type: 'Feature' as const,
-      properties: {},
-      geometry: { type: 'Point' as const, coordinates: c as [number, number] }
-    }));
-    const mapMatchedFc: FeatureCollection = { type: 'FeatureCollection', features: mapMatchedFeatures };
-    map.addSource(MAP_MATCHED_SOURCE, { type: 'geojson', data: mapMatchedFc });
-    map.addLayer({ id: 'map-matched-points', type: 'circle', source: MAP_MATCHED_SOURCE,
-      paint: { 'circle-color': '#f4a261', 'circle-radius': 5, 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 }
-    });
-  }
-  
   if (map.getLayer('overlay-image-layer')) {
     map.moveLayer('contour-points', 'overlay-image-layer');
     map.moveLayer('contour-matched-points', 'overlay-image-layer');
-    map.moveLayer('map-matched-points', 'overlay-image-layer');
+    map.moveLayer('map-area-points', 'overlay-image-layer');
   }
 }
 
@@ -98,7 +98,7 @@ function clearExtractedFeaturesFromMap() {
   try {
     const layers = [
       'suggestion-preview-points', 'suggestion-preview-lines', 'suggestion-preview-fills',
-      'contour-points', 'contour-matched-points', 'map-matched-points'
+      'contour-points', 'contour-matched-points', 'map-area-points'
     ];
     for (const id of layers) {
       if (map.getLayer(id)) map.removeLayer(id);

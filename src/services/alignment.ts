@@ -696,9 +696,15 @@ export async function suggestImageAlignment(
         type: 'Feature', properties: {}, geometry: { type: 'MultiPoint', coordinates: pixelCoords }
       }]};
       
-      // Match contour points against map area samples (already in screen pixels)
+      // Get map area samples (the "target" points to match against)
       const mapScreenPoints = collectMapAreaSamples(map);
       console.log('Map area samples:', mapScreenPoints.length);
+      
+      // Convert map screen points to geo coordinates for display
+      const mapAreaGeoPoints: Array<[number, number]> = mapScreenPoints.map(pt => {
+        const lngLat = map.unproject(pt as [number, number]);
+        return [lngLat.lng, lngLat.lat] as [number, number];
+      });
       
       let mapMatched: Array<[number, number]> = [];
       let contourMatched: Array<[number, number]> = [];
@@ -744,12 +750,8 @@ export async function suggestImageAlignment(
           }
           
           // Get geo coordinates for matched map points
-          mapMatched = mapScreenPoints
-            .filter((_, i) => matchedMapIndices.has(i))
-            .map(pt => {
-              const lngLat = map.unproject(pt as [number, number]);
-              return [lngLat.lng, lngLat.lat] as [number, number];
-            });
+          mapMatched = mapAreaGeoPoints
+            .filter((_, i) => matchedMapIndices.has(i));
           
           // Get geo coordinates for matched contour points
           const matchedContourIndices = new Set<number>();
@@ -773,8 +775,8 @@ export async function suggestImageAlignment(
           suggestion.pickedColor = colorHex;
           suggestion.extractedFeatures = fc;
           suggestion.matchedPixelSamples = pixelCoords;
-          suggestion.mapMatchedPoints = mapMatched;
-          suggestion.contourMatchedPoints = contourMatched;
+          suggestion.mapMatchedPoints = mapAreaGeoPoints;  // All map points (for display)
+          suggestion.contourMatchedPoints = contourMatched; // Only matched contour points
           return suggestion;
         }
       }
@@ -782,7 +784,7 @@ export async function suggestImageAlignment(
       return {
         transform, offset: [0, 0], score: 0.5, matchedSamples: pixelCoords.length, totalSamples: pixelCoords.length,
         source: 'areas', extractedFeatures: fc, matchedPixelSamples: pixelCoords, pickedColor: colorHex,
-        mapMatchedPoints: mapMatched, contourMatchedPoints: contourMatched
+        mapMatchedPoints: mapAreaGeoPoints, contourMatchedPoints: []
       };
     }
 
