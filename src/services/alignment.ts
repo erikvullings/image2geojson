@@ -13,6 +13,8 @@ export interface AlignmentSuggestion {
   extractedFeatures: GeoJSON.FeatureCollection;
   matchedPixelSamples: Array<[number, number]>;
   pickedColor?: string;
+  mapMatchedPoints?: Array<[number, number]>;
+  contourMatchedPoints?: Array<[number, number]>;
 }
 
 export type AlignmentMode = 'fit' | 'refine';
@@ -698,6 +700,9 @@ export async function suggestImageAlignment(
       const mapScreenPoints = collectMapAreaSamples(map);
       console.log('Map area samples:', mapScreenPoints.length);
       
+      let mapMatched: Array<[number, number]> = [];
+      let contourMatched: Array<[number, number]> = [];
+      
       if (mapScreenPoints.length >= 50) {
         const suggestion = suggestFromSamples(
           mapScreenPoints,
@@ -712,17 +717,72 @@ export async function suggestImageAlignment(
         );
         
         if (suggestion) {
+          // Project contour points with the suggested transform and offset
+          const projectedContour = projectOverlayPoints(
+            overlayPixelPoints,
+            naturalWidth,
+            naturalHeight,
+            suggestion.transform,
+            mapWidth,
+            mapHeight,
+          );
+          
+          // Find matched pairs: contour point close to map point
+          const threshold = 8;
+          const matchedMapIndices = new Set<number>();
+          
+          for (const cp of projectedContour) {
+            for (let mi = 0; mi < mapScreenPoints.length; mi++) {
+              const mp = mapScreenPoints[mi];
+              const dx = cp[0] - mp[0] - suggestion.offset[0];
+              const dy = cp[1] - mp[1] - suggestion.offset[1];
+              if (dx * dx + dy * dy <= threshold * threshold) {
+                matchedMapIndices.add(mi);
+                break;
+              }
+            }
+          }
+          
+          // Get geo coordinates for matched map points
+          mapMatched = mapScreenPoints
+            .filter((_, i) => matchedMapIndices.has(i))
+            .map(pt => {
+              const lngLat = map.unproject(pt as [number, number]);
+              return [lngLat.lng, lngLat.lat] as [number, number];
+            });
+          
+          // Get geo coordinates for matched contour points
+          const matchedContourIndices = new Set<number>();
+          for (let ci = 0; ci < projectedContour.length; ci++) {
+            const cp = projectedContour[ci];
+            for (let mi = 0; mi < mapScreenPoints.length; mi++) {
+              const mp = mapScreenPoints[mi];
+              const dx = cp[0] - mp[0] - suggestion.offset[0];
+              const dy = cp[1] - mp[1] - suggestion.offset[1];
+              if (dx * dx + dy * dy <= threshold * threshold) {
+                matchedContourIndices.add(ci);
+                break;
+              }
+            }
+          }
+          
+          contourMatched = pixelCoords.filter((_, i) => matchedContourIndices.has(i));
+          
+          console.log('Matched:', mapMatched.length, 'map points,', contourMatched.length, 'contour points');
+          
           suggestion.pickedColor = colorHex;
-          // Always show the contour, not the re-projected suggestion points
           suggestion.extractedFeatures = fc;
           suggestion.matchedPixelSamples = pixelCoords;
+          suggestion.mapMatchedPoints = mapMatched;
+          suggestion.contourMatchedPoints = contourMatched;
           return suggestion;
         }
       }
       
       return {
         transform, offset: [0, 0], score: 0.5, matchedSamples: pixelCoords.length, totalSamples: pixelCoords.length,
-        source: 'areas', extractedFeatures: fc, matchedPixelSamples: pixelCoords, pickedColor: colorHex
+        source: 'areas', extractedFeatures: fc, matchedPixelSamples: pixelCoords, pickedColor: colorHex,
+        mapMatchedPoints: mapMatched, contourMatchedPoints: contourMatched
       };
     }
 
