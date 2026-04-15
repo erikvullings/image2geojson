@@ -623,30 +623,55 @@ export async function suggestImageAlignment(
       const tolerance = pickPoint.tolerance;
       const tolSq = tolerance * tolerance;
       
+      // Edge margin to exclude (pixels near image border)
+      const edgeMargin = 10;
+      
       // Global color matching: scan ALL pixels and collect those matching the color
-      const visited = new Set<string>();
+      const matched = new Set<string>();
       for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
           const key = `${x},${y}`;
-          if (visited.has(key)) continue;
           const idx = (y * w + x) * 4;
           const dist = Math.pow(rgba[idx] - tR, 2) + Math.pow(rgba[idx + 1] - tG, 2) + Math.pow(rgba[idx + 2] - tB, 2);
           if (dist <= tolSq) {
-            visited.add(key);
+            matched.add(key);
           }
         }
       }
       
-      console.log('Global color match found:', visited.size, 'pixels (tolerance:', tolerance, 'tolSq:', tolSq, ')');
+      console.log('Global color match found:', matched.size, 'pixels (tolerance:', tolerance, 'tolSq:', tolSq, ')');
+      
+      // Extract contour pixels only (pixels that have at least one non-matching neighbor)
+      const contour = new Set<string>();
+      for (const key of matched) {
+        const [x, y] = key.split(',').map(Number);
+        let isInterior = true;
+        for (let oy = -1; oy <= 1 && isInterior; oy++) {
+          for (let ox = -1; ox <= 1 && isInterior; ox++) {
+            if (ox === 0 && oy === 0) continue;
+            if (!matched.has(`${x + ox},${y + oy}`)) {
+              isInterior = false;
+            }
+          }
+        }
+        if (!isInterior) {
+          // Only include if not near image edge
+          if (x >= edgeMargin && x < w - edgeMargin && y >= edgeMargin && y < h - edgeMargin) {
+            contour.add(key);
+          }
+        }
+      }
+      
+      console.log('Contour pixels:', contour.size);
       
       const mapWidth = map.getContainer().clientWidth;
       const mapHeight = map.getContainer().clientHeight;
       const pixelCoords: Array<[number, number]> = [];
       
-      // Sample from visited pixels
-      const step = Math.max(1, Math.floor(visited.size / 500));
+      // Sample from contour pixels
+      const step = Math.max(1, Math.floor(contour.size / 500));
       let i = 0;
-      for (const key of visited) {
+      for (const key of contour) {
         if (i++ % step !== 0) continue;
         const [x, y] = key.split(',').map(Number);
         const px = x / sc;
