@@ -623,9 +623,6 @@ export async function suggestImageAlignment(
       const tolerance = pickPoint.tolerance;
       const tolSq = tolerance * tolerance;
       
-      // Edge margin to exclude (pixels near image border)
-      const edgeMargin = 10;
-      
       // Global color matching: scan ALL pixels and collect those matching the color
       const matched = new Set<string>();
       for (let y = 0; y < h; y++) {
@@ -642,6 +639,7 @@ export async function suggestImageAlignment(
       console.log('Global color match found:', matched.size, 'pixels (tolerance:', tolerance, 'tolSq:', tolSq, ')');
       
       // Extract contour pixels only (pixels that have at least one non-matching neighbor)
+      const edgeMargin = 10;
       const contour = new Set<string>();
       for (const key of matched) {
         const [x, y] = key.split(',').map(Number);
@@ -666,6 +664,11 @@ export async function suggestImageAlignment(
       
       const mapWidth = map.getContainer().clientWidth;
       const mapHeight = map.getContainer().clientHeight;
+      
+      // Raw pixel coordinates in overlay image (not geo converted)
+      const overlayPixelPoints: Array<[number, number]> = [];
+      
+      // Geo coordinates for display on map
       const pixelCoords: Array<[number, number]> = [];
       
       // Sample from contour pixels
@@ -676,6 +679,7 @@ export async function suggestImageAlignment(
         const [x, y] = key.split(',').map(Number);
         const px = x / sc;
         const py = y / sc;
+        overlayPixelPoints.push([px, py]);
         const screenPt = projectOverlayPoint(px, py, naturalWidth, naturalHeight, transform, mapWidth, mapHeight);
         const lngLat = map.unproject(screenPt);
         pixelCoords.push([lngLat.lng, lngLat.lat]);
@@ -685,15 +689,16 @@ export async function suggestImageAlignment(
       
       if (pixelCoords.length < 10) return null;
       
+      // Always show the contour on the map
       const fc: FeatureCollection = { type: 'FeatureCollection', features: [{
         type: 'Feature', properties: {}, geometry: { type: 'MultiPoint', coordinates: pixelCoords }
       }]};
       
-      const suggestion: AlignmentSuggestion = {
+      // Return basic suggestion with contour shown (matching will be done in next iteration)
+      return {
         transform, offset: [0, 0], score: 0.5, matchedSamples: pixelCoords.length, totalSamples: pixelCoords.length,
         source: 'areas', extractedFeatures: fc, matchedPixelSamples: pixelCoords, pickedColor: colorHex
       };
-      return suggestion;
     }
 
     const suggestion = suggestFromSamples(mapSamples, overlaySamples, naturalWidth, naturalHeight, transform, width, height, 'fit', source);

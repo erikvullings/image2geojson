@@ -537,12 +537,7 @@ export const ImageOverlay: m.Component<Attrs> = {
           m('div', { style: { width: 20, height: 20, backgroundColor: alignmentSuggestion.pickedColor, border: '1px solid #ccc', borderRadius: 3 } }),
           m('span', alignmentSuggestion.pickedColor),
         ]),
-        alignmentSuggestion.pickedColor && m('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } }, [
-        'Picked color: ',
-        m('div', { style: { width: 20, height: 20, backgroundColor: alignmentSuggestion.pickedColor, border: '1px solid #ccc', borderRadius: 3 } }),
-        m('span', alignmentSuggestion.pickedColor),
-      ]),
-      m('div', `${alignmentSuggestion.matchedPixelSamples.length} points (color-matched areas in teal)`),
+        m('div', `${alignmentSuggestion.matchedPixelSamples.length} points (color-matched areas in teal)`),
         m('div.alignment-actions', [
           m('button.btn.btn-primary', {
             onclick: () => {
