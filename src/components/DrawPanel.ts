@@ -5,6 +5,7 @@ import type { MeiosisCell } from '../state';
 import type { AppState } from '../state/types';
 import { getMap } from './MapView';
 import { downloadGeoJSON, parseGeoJSON } from '../services/geojsonExport';
+import { drawStyles } from '../services/drawStyles';
 
 interface Attrs {
   cell: MeiosisCell<AppState>;
@@ -28,6 +29,24 @@ function initDraw(cell: MeiosisCell<AppState>) {
     displayControlsDefault: false,
     controls: { point: true, line_string: true, polygon: true, trash: true },
     boxSelect: true,
+  });
+
+  // Apply custom draw styles to the map (larger, more visible points)
+  drawStyles.forEach((layer) => {
+    if (!map.getLayer(layer.id)) {
+      map.addLayer(layer);
+    }
+  });
+
+  // Hide CSS-rendered points - we use map layers instead
+  map.on('style.load', () => {
+    const container = map.getContainer();
+    if (!container.querySelector('.draw-point-hidden')) {
+      const style = document.createElement('style');
+      style.className = 'draw-point-hidden';
+      style.textContent = '.gl-draw-handler { display: none !important; }';
+      container.appendChild(style);
+    }
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -78,6 +97,12 @@ function initDraw(cell: MeiosisCell<AppState>) {
 function removeDraw() {
   const map = getMap();
   if (!map || !draw) return;
+  // Clean up custom style element
+  map.getContainer().querySelector('.draw-point-hidden')?.remove();
+  // Remove custom draw layers
+  drawStyles.forEach((layer) => {
+    try { if (map.getLayer(layer.id)) map.removeLayer(layer.id); } catch { /* ignore */ }
+  });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   map.removeControl(draw as any);
   draw = null;

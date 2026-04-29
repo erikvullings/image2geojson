@@ -252,42 +252,6 @@ html, body, #app {
 #overlay-controls label span { min-width: 38px; text-align: right; color: var(--text2); font-size: 11px; }
 #overlay-controls .btn { grid-column: span 1; }
 
-#alignment-suggestion {
-  position: absolute;
-  left: 50%;
-  bottom: 12px;
-  transform: translateX(-50%);
-  z-index: 21;
-  min-width: 320px;
-  max-width: min(640px, calc(100vw - 32px));
-  background: rgba(15, 52, 96, 0.96);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 10px 12px;
-  color: var(--text);
-  font-size: 12px;
-  line-height: 1.4;
-  pointer-events: auto;
-}
-#alignment-suggestion.modal {
-  position: fixed;
-  left: 50%;
-  top: 50%;
-  bottom: auto;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-}
-
-#alignment-suggestion.error {
-  background: rgba(122, 26, 26, 0.94);
-}
-
-.alignment-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-  flex-wrap: wrap;
-}
 
 /* ── Upload prompt ──────────────────────────────────── */
 #upload-prompt {

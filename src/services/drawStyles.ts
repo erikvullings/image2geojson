@@ -1,5 +1,5 @@
 /**
- * Patched @mapbox/mapbox-gl-draw styles for MapLibre GL JS v5 compatibility.
+ * Custom MapLibre style layers for maplibre-gl-draw.
  *
  * MapLibre v5 requires array literals inside expressions to be wrapped in
  * ["literal", [...]]. The default draw styles use bare arrays in the
@@ -30,7 +30,6 @@ export const drawStyles: any[] = [
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: {
       'line-color': ['case', ['==', ['get', 'active'], 'true'], orange, blue],
-      // ↓ MapLibre v5: bare arrays inside case must be ["literal", [...]]
       'line-dasharray': [
         'case',
         ['==', ['get', 'active'], 'true'], ['literal', [0.2, 2]],
@@ -39,14 +38,16 @@ export const drawStyles: any[] = [
       'line-width': 2,
     },
   },
-  // Feature points — outer ring
+  // Feature points — outer ring (larger for visibility)
   {
     id: 'gl-draw-point-outer',
     type: 'circle',
     filter: ['all', ['==', '$type', 'Point'], ['==', 'meta', 'feature']],
     paint: {
-      'circle-radius': ['case', ['==', ['get', 'active'], 'true'], 7, 5],
+      'circle-radius': ['case', ['==', ['get', 'active'], 'true'], 12, 9],
       'circle-color': white,
+      'circle-stroke-width': 1.5,
+      'circle-stroke-color': ['case', ['==', ['get', 'active'], 'true'], orange, blue],
     },
   },
   // Feature points — inner fill
@@ -55,7 +56,7 @@ export const drawStyles: any[] = [
     type: 'circle',
     filter: ['all', ['==', '$type', 'Point'], ['==', 'meta', 'feature']],
     paint: {
-      'circle-radius': ['case', ['==', ['get', 'active'], 'true'], 5, 3],
+      'circle-radius': ['case', ['==', ['get', 'active'], 'true'], 8, 6],
       'circle-color': ['case', ['==', ['get', 'active'], 'true'], orange, blue],
     },
   },
@@ -65,7 +66,7 @@ export const drawStyles: any[] = [
     type: 'circle',
     filter: ['all', ['==', '$type', 'Point'], ['==', 'meta', 'vertex'], ['!=', 'mode', 'simple_select']],
     paint: {
-      'circle-radius': ['case', ['==', ['get', 'active'], 'true'], 7, 5],
+      'circle-radius': ['case', ['==', ['get', 'active'], 'true'], 8, 6],
       'circle-color': white,
     },
   },
@@ -75,7 +76,7 @@ export const drawStyles: any[] = [
     type: 'circle',
     filter: ['all', ['==', '$type', 'Point'], ['==', 'meta', 'vertex'], ['!=', 'mode', 'simple_select']],
     paint: {
-      'circle-radius': ['case', ['==', ['get', 'active'], 'true'], 5, 3],
+      'circle-radius': ['case', ['==', ['get', 'active'], 'true'], 6, 4],
       'circle-color': orange,
     },
   },
@@ -84,6 +85,6 @@ export const drawStyles: any[] = [
     id: 'gl-draw-midpoint',
     type: 'circle',
     filter: ['all', ['==', 'meta', 'midpoint']],
-    paint: { 'circle-radius': 3, 'circle-color': orange },
+    paint: { 'circle-radius': 5, 'circle-color': orange },
   },
 ];
